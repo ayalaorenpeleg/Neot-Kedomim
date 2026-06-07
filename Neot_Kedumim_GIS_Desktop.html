@@ -1,0 +1,2723 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>מפת נאות קדומים – GIS</title>
+
+  <!-- Leaflet (local) -->
+  <link rel="stylesheet" href="lib/leaflet.css" />
+  <script src="lib/leaflet.js"></script>
+
+  <!-- Leaflet Draw (local) -->
+  <link rel="stylesheet" href="lib/leaflet.draw.css" />
+  <script src="lib/leaflet.draw.min.js"></script>
+
+  <!-- Leaflet Omnivore (local) -->
+  <script src="lib/leaflet-omnivore.min.js"></script>
+
+  <!-- Shapefile (local) -->
+  <script src="lib/shp.js"></script>
+
+  <!-- Proj4 (local) -->
+  <script src="lib/proj4.js"></script>
+
+  <!-- GeoRaster — תמיכה ב-GeoTIFF / ECW שהומר -->
+  <script src="lib/georaster.min.js"></script>
+  <script src="lib/georaster-layer-for-leaflet.min.js"></script>
+
+  <!-- Font Awesome (local) -->
+  <link rel="stylesheet" href="lib/font-awesome.min.css" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ─────────────────────────────────────── */
+    #sidebar {
+      position: fixed;
+      top: 0; bottom: 0; right: 0;
+      width: 320px;
+      background: #16213e;
+      display: flex;
+      flex-direction: column;
+      border-left: 2px solid #0f3460;
+      z-index: 1000;
+      transition: width 0.3s, right 0.3s;
+    }
+    #sidebar.collapsed { width: 0; overflow: hidden; }
+
+    #sidebar-header {
+      background: #fff;
+      padding: 10px 14px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    #sidebar-header p {
+      font-size: 0.78rem;
+      color: #7b1230;
+      font-weight: 600;
+      line-height: 1.4;
+      text-align: left;
+      flex: 1;
+    }
+
+    #tab-bar {
+      display: flex;
+      background: #0d1b2a;
+      border-bottom: 1px solid #0f3460;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 10px 4px;
+      background: none;
+      border: none;
+      color: #8899aa;
+      cursor: pointer;
+      font-size: 0.72rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      transition: color 0.2s, background 0.2s;
+    }
+    .tab-btn i { font-size: 1rem; }
+    .tab-btn:hover { color: #fff; background: #1a2f4a; }
+    .tab-btn.active { color: #4fc3f7; border-bottom: 2px solid #4fc3f7; }
+
+    .tab-panel { display: none; flex: 1; overflow-y: auto; padding: 12px; }
+    .tab-panel.active { display: block; }
+
+    /* ── Section cards ───────────────────────────────── */
+    .section-card {
+      background: #0d1b2a;
+      border: 1px solid #1e3a5f;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .section-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #4fc3f7;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* ── Form controls ───────────────────────────────── */
+    input[type=text], input[type=url], textarea, select {
+      width: 100%;
+      background: #1a2f4a;
+      border: 1px solid #2a4f7a;
+      border-radius: 5px;
+      color: #e0e0e0;
+      padding: 7px 10px;
+      font-size: 0.82rem;
+      margin-bottom: 8px;
+      outline: none;
+      transition: border-color 0.2s;
+      font-family: inherit;
+      direction: rtl;
+    }
+    input:focus, textarea:focus, select:focus { border-color: #4fc3f7; }
+    textarea { resize: vertical; min-height: 60px; }
+    label { font-size: 0.78rem; color: #aac4de; display: block; margin-bottom: 3px; }
+
+    input[type=file] {
+      display: none;
+    }
+    .file-btn {
+      display: block;
+      width: 100%;
+      padding: 8px;
+      background: #1a2f4a;
+      border: 1px dashed #2a4f7a;
+      border-radius: 5px;
+      color: #aac4de;
+      text-align: center;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: border-color 0.2s, color 0.2s;
+      margin-bottom: 8px;
+    }
+    .file-btn:hover { border-color: #4fc3f7; color: #4fc3f7; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 14px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary  { background: #0f3460; color: #4fc3f7; border: 1px solid #4fc3f7; }
+    .btn-success  { background: #1b4332; color: #52b788; border: 1px solid #52b788; }
+    .btn-danger   { background: #3d0000; color: #ff6b6b; border: 1px solid #ff6b6b; }
+    .btn-warning  { background: #3d2600; color: #ffa94d; border: 1px solid #ffa94d; }
+    .btn-full     { width: 100%; justify-content: center; margin-bottom: 6px; }
+
+    /* ── Layer list ──────────────────────────────────── */
+    #layer-list, #poi-list { list-style: none; }
+    .layer-item, .poi-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 8px;
+      background: #1a2f4a;
+      border-radius: 5px;
+      margin-bottom: 6px;
+      font-size: 0.78rem;
+      border: 1px solid #2a4f7a;
+    }
+    .layer-item .layer-name, .poi-item .poi-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .layer-color-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .layer-toggle { cursor: pointer; font-size: 0.85rem; color: #aac4de; }
+    .layer-toggle.off { color: #555; }
+    .icon-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #aac4de;
+      font-size: 0.8rem;
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+    .icon-btn:hover { color: #ff6b6b; background: #3d0000; }
+    .icon-btn.zoom:hover { color: #4fc3f7; background: #0f3460; }
+
+    .poi-icon-badge {
+      font-size: 1rem;
+      width: 22px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    /* ── Category pills ──────────────────────────────── */
+    .cat-pills { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+    .cat-pill {
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 0.72rem;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.2s;
+    }
+    .cat-pill.active { font-weight: 700; }
+
+    /* ── Base layer grid ────────────────────────────── */
+    .baselayer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .baselayer-card {
+      padding: 10px;
+      background: #1a2f4a;
+      border: 2px solid #2a4f7a;
+      border-radius: 6px;
+      cursor: pointer;
+      text-align: center;
+      font-size: 0.75rem;
+      color: #aac4de;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .baselayer-card i { display: block; font-size: 1.5rem; margin-bottom: 4px; }
+    .baselayer-card.active { border-color: #4fc3f7; color: #4fc3f7; }
+    .baselayer-card:hover { border-color: #4fc3f7; }
+
+    /* ── Map container ───────────────────────────────── */
+    #map-wrap {
+      position: fixed;
+      top: 0; bottom: 0; left: 0;
+      right: 320px;
+      transition: right 0.3s;
+    }
+    #map-wrap.sidebar-collapsed { right: 0; }
+
+    #map {
+      position: fixed;
+      top: 0; bottom: 0; left: 0;
+      right: 320px;
+      transition: right 0.3s;
+    }
+    #map.sidebar-collapsed { right: 0; }
+
+    /* ── Toggle sidebar btn ─────────────────────────── */
+    #toggle-sidebar {
+      position: absolute;
+      top: 50%;
+      right: 0;
+      transform: translateY(-50%);
+      z-index: 1100;
+      background: #0f3460;
+      border: 1px solid #4fc3f7;
+      border-radius: 6px 0 0 6px;
+      color: #4fc3f7;
+      cursor: pointer;
+      padding: 10px 6px;
+      font-size: 1rem;
+      transition: background 0.2s;
+    }
+    #toggle-sidebar:hover { background: #1a3d6e; }
+
+    /* ── Map toolbar ─────────────────────────────────── */
+    #map-toolbar {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 900;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .map-tool-btn {
+      width: 36px;
+      height: 36px;
+      background: #16213e;
+      border: 1px solid #2a4f7a;
+      border-radius: 6px;
+      color: #aac4de;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      transition: all 0.2s;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
+    .map-tool-btn:hover, .map-tool-btn.active { background: #0f3460; color: #4fc3f7; border-color: #4fc3f7; }
+
+    /* ── Coords bar ──────────────────────────────────── */
+    #coords-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(13,27,42,0.85);
+      backdrop-filter: blur(4px);
+      padding: 4px 12px;
+      font-size: 0.72rem;
+      color: #8899aa;
+      display: flex;
+      gap: 20px;
+      z-index: 800;
+    }
+    #coords-bar span { color: #4fc3f7; }
+
+    /* ── Modal ───────────────────────────────────────── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 10px;
+      padding: 24px;
+      width: 380px;
+      max-width: 95vw;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    .modal h2 { font-size: 1rem; color: #4fc3f7; margin-bottom: 16px; }
+    .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+    /* ── Toast ───────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #0f3460;
+      border: 1px solid #4fc3f7;
+      color: #e0e0e0;
+      padding: 10px 20px;
+      border-radius: 20px;
+      font-size: 0.82rem;
+      z-index: 3000;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+    }
+    #toast.show { opacity: 1; }
+
+    /* ── Scrollbar ───────────────────────────────────── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: #0d1b2a; }
+    ::-webkit-scrollbar-thumb { background: #1e3a5f; border-radius: 3px; }
+
+    /* ── Search ──────────────────────────────────────── */
+    #poi-search {
+      margin-bottom: 8px;
+    }
+
+
+    /* ── Identify Panel ──────────────────────────────── */
+    #identify-panel {
+      position: absolute;
+      top: 12px;
+      left: 58px;
+      width: 300px;
+      background: #16213e;
+      border: 1px solid #4fc3f7;
+      border-radius: 10px;
+      z-index: 900;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      display: none;
+      flex-direction: column;
+      max-height: calc(100vh - 80px);
+      overflow: hidden;
+    }
+    #identify-panel.open { display: flex; }
+
+    #identify-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-bottom: 1px solid #1e3a5f;
+      flex-shrink: 0;
+    }
+    #identify-title {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #4fc3f7;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    #identify-close {
+      background: none;
+      border: none;
+      color: #8899aa;
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 2px 5px;
+      border-radius: 4px;
+    }
+    #identify-close:hover { color: #ff6b6b; background: #3d0000; }
+
+    #identify-layer-name {
+      padding: 6px 14px;
+      font-size: 0.72rem;
+      color: #8899aa;
+      border-bottom: 1px solid #1e3a5f;
+      flex-shrink: 0;
+      background: #0d1b2a;
+    }
+    #identify-layer-name span { color: #ffa94d; font-weight: 600; }
+
+    #identify-body {
+      overflow-y: auto;
+      flex: 1;
+      padding: 10px 14px;
+    }
+    #identify-body::-webkit-scrollbar { width: 4px; }
+    #identify-body::-webkit-scrollbar-track { background: transparent; }
+    #identify-body::-webkit-scrollbar-thumb { background: #1e3a5f; border-radius: 2px; }
+
+    .identify-row {
+      display: grid;
+      grid-template-columns: 38% 62%;
+      gap: 4px;
+      padding: 6px 0;
+      border-bottom: 1px solid #1a2f4a;
+      font-size: 0.78rem;
+      align-items: start;
+    }
+    .identify-row:last-child { border-bottom: none; }
+    .identify-key {
+      color: #8899aa;
+      font-weight: 600;
+      word-break: break-word;
+      padding-left: 4px;
+    }
+    .identify-val {
+      color: #e0e0e0;
+      word-break: break-word;
+    }
+    .identify-val.null { color: #555; font-style: italic; }
+
+    #identify-empty {
+      text-align: center;
+      padding: 30px 10px;
+      color: #8899aa;
+      font-size: 0.8rem;
+    }
+    #identify-empty i { display: block; font-size: 1.8rem; margin-bottom: 8px; color: #2a4f7a; }
+
+    #identify-geom {
+      padding: 8px 14px;
+      font-size: 0.72rem;
+      color: #8899aa;
+      border-top: 1px solid #1e3a5f;
+      flex-shrink: 0;
+      background: #0d1b2a;
+      display: flex;
+      gap: 14px;
+    }
+    #identify-geom span { color: #52b788; }
+
+    .identify-btn-active { background: #0f3460 !important; color: #4fc3f7 !important; border-color: #4fc3f7 !important; }
+
+
+    /* ── Auth ─────────────────────────────────────────── */
+    #auth-bar {
+      background: #0d1b2a;
+      border-bottom: 1px solid #0f3460;
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .auth-user-info { font-size: 0.75rem; color: #8899aa; display: flex; align-items: center; gap: 7px; }
+    .auth-user-info i { color: #4fc3f7; }
+    .auth-role-badge {
+      font-size: 0.65rem; padding: 2px 7px; border-radius: 10px; font-weight: 700;
+      background: #0f3460; color: #4fc3f7; border: 1px solid #4fc3f7;
+    }
+    .auth-btn {
+      padding: 4px 10px; border-radius: 5px; font-size: 0.72rem; font-weight: 700;
+      cursor: pointer; border: 1px solid;
+    }
+    .auth-btn-login  { background: #0f3460; color: #4fc3f7; border-color: #4fc3f7; }
+    .auth-btn-logout { background: none;    color: #8899aa;  border-color: #2a4f7a; }
+
+    /* ── Login Modal ───────────────────────────────────── */
+    #login-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.65); z-index: 4000;
+      align-items: center; justify-content: center;
+    }
+    #login-overlay.open { display: flex; }
+    #login-box {
+      background: #f8f9fb; border: 1px solid #dde3ec; border-radius: 14px;
+      padding: 30px 28px; width: 360px; max-width: 95vw;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    }
+    #login-box .login-logo { text-align: center; margin-bottom: 18px; }
+    #login-box .login-logo img { height: 52px; }
+    #login-box h2 { text-align: center; font-size: 1rem; color: #0f3460; margin-bottom: 4px; }
+    #login-box p  { text-align: center; font-size: 0.72rem; color: #64748b; margin-bottom: 18px; }
+    #login-err {
+      background: #3d0000; border: 1px solid #ff6b6b; color: #ff6b6b;
+      border-radius: 7px; padding: 7px 12px; font-size: 0.78rem;
+      margin-bottom: 10px; text-align: center; display: none;
+    }
+    #login-err.show { display: block; }
+    .login-lbl { font-size: 0.75rem; color: #4a5568; display: block; margin-bottom: 3px; }
+    .login-inp {
+      width: 100%; background: #ffffff; border: 1px solid #c8d5e8; border-radius: 7px;
+      color: #1a2b3c; padding: 10px 12px; font-size: 0.88rem; margin-bottom: 11px;
+      outline: none; font-family: inherit; transition: border-color 0.2s;
+    }
+    .login-inp:focus { border-color: #0f3460; }
+    .login-go {
+      width: 100%; padding: 12px; background: #0f3460; border: 1px solid #4fc3f7;
+      border-radius: 8px; color: #4fc3f7; font-size: 0.9rem; font-weight: 700;
+      cursor: pointer; margin-bottom: 8px; display: flex; align-items: center;
+      justify-content: center; gap: 7px;
+    }
+    .login-go:hover { background: #1a3d6e; }
+    .login-guest {
+      width: 100%; padding: 9px; background: none; border: 1px solid #c8d5e8;
+      border-radius: 8px; color: #64748b; font-size: 0.82rem; cursor: pointer;
+    }
+    .login-guest:hover { background: #eef2f8; }
+
+    /* ── Report Tab ────────────────────────────────────── */
+    .report-status {
+      display: inline-block; padding: 2px 9px; border-radius: 20px;
+      font-size: 0.68rem; font-weight: 700;
+    }
+    .status-new        { background:#3d2600; color:#ffa94d; border:1px solid #ffa94d; }
+    .status-inprogress { background:#0f3460; color:#4fc3f7; border:1px solid #4fc3f7; }
+    .status-done       { background:#1b4332; color:#52b788; border:1px solid #52b788; }
+
+    .report-card {
+      background: #0d1b2a; border: 1px solid #1e3a5f;
+      border-radius: 8px; padding: 11px; margin-bottom: 8px;
+    }
+    .report-card-hdr { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:5px; }
+    .report-card-name { font-size:0.8rem; font-weight:700; color:#e0e0e0; flex:1; }
+    .report-card-time { font-size:0.68rem; color:#8899aa; margin-bottom:4px; }
+    .report-card-detail { font-size:0.78rem; color:#aac4de; margin-bottom:6px; line-height:1.5; }
+    .report-card-loc  { font-size:0.68rem; color:#8899aa; margin-bottom:6px; }
+    .report-card-img  {
+      width:100%; max-height:160px; object-fit:cover; border-radius:6px;
+      margin-bottom:7px; cursor:pointer; display:block;
+    }
+    .report-admin-btns { display:flex; gap:5px; flex-wrap:wrap; margin-top:5px; }
+    .rstat-btn {
+      padding:3px 9px; border-radius:14px; font-size:0.68rem; font-weight:700;
+      border:1px solid; cursor:pointer; transition:opacity 0.15s;
+    }
+    .rstat-btn:hover { opacity:0.75; }
+    .rstat-inprogress { background:#0f3460; color:#4fc3f7; border-color:#4fc3f7; }
+    .rstat-done       { background:#1b4332; color:#52b788; border-color:#52b788; }
+    .rstat-del        { background:#3d0000; color:#ff6b6b; border-color:#ff6b6b; }
+
+    /* ── Report Form Modal ─────────────────────────────── */
+    #report-overlay {
+      display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6);
+      z-index:3000; align-items:center; justify-content:center;
+    }
+    #report-overlay.open { display:flex; }
+    #report-box {
+      background:#16213e; border:1px solid #ffa94d; border-radius:14px;
+      padding:26px 22px; width:420px; max-width:95vw; max-height:85vh;
+      overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,0.6);
+    }
+    #report-box h2 { font-size:1rem; color:#ffa94d; margin-bottom:16px; display:flex; align-items:center; gap:7px; }
+    #rphoto-preview-wrap { margin-bottom:10px; display:none; }
+    #rphoto-preview { width:100%; max-height:180px; object-fit:cover; border-radius:7px; border:1px solid #2a4f7a; }
+    #rphoto-clear { margin-top:4px; font-size:0.72rem; color:#ff6b6b; background:none; border:none; cursor:pointer; }
+
+    /* Lightbox */
+    #r-lightbox {
+      display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92);
+      z-index:5000; align-items:center; justify-content:center;
+    }
+    #r-lightbox.open { display:flex; }
+    #r-lightbox img { max-width:92vw; max-height:90vh; border-radius:8px; }
+    #r-lightbox-close { position:absolute; top:16px; right:16px; background:none; border:none; color:#fff; font-size:1.8rem; cursor:pointer; }
+
+    /* ── Responsive ──────────────────────────────────── */
+    @media (max-width: 600px) {
+      #sidebar { width: 280px; min-width: 280px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════
+     SIDEBAR
+════════════════════════════════════════════════════════ -->
+<div id="sidebar">
+  <div id="sidebar-header">
+    <img src="https://www.n-k.org.il/wp-content/themes/neot/images/He-n-k.png"
+         alt="לוגו נאות קדומים"
+         style="width:110px;height:auto;flex-shrink:0;border-radius:4px;" />
+    <p>מערכת מידע גיאוגרפית – GIS</p>
+  </div>
+
+  <!-- Auth bar -->
+  <div id="auth-bar">
+    <div class="auth-user-info" id="auth-user-info">
+      <i class="fa-solid fa-user"></i> <span id="auth-name-label">אורח</span>
+      <span id="auth-role-badge" class="auth-role-badge" style="display:none">מנהל</span>
+    </div>
+    <button class="auth-btn auth-btn-login" id="auth-action-btn" onclick="openLoginModal()">כניסה</button>
+  </div>
+
+  <div id="tab-bar">
+    <button class="tab-btn active" data-tab="layers"><i class="fa-solid fa-layer-group"></i>שכבות</button>
+    <button class="tab-btn" data-tab="poi"><i class="fa-solid fa-map-pin"></i>נקודות</button>
+    <button class="tab-btn" data-tab="import"><i class="fa-solid fa-file-import"></i>ייבוא</button>
+    <button class="tab-btn" data-tab="basemap"><i class="fa-solid fa-globe"></i>רקע</button>
+    <button class="tab-btn" data-tab="export"><i class="fa-solid fa-file-export"></i>יצוא</button>
+    <button class="tab-btn" data-tab="reports" style="color:#ffa94d"><i class="fa-solid fa-triangle-exclamation"></i>דיווח</button>
+  </div>
+
+  <!-- ── Tab: Layers ──────────────────────────────────── -->
+  <div id="tab-layers" class="tab-panel active">
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-layer-group"></i> שכבות פעילות</div>
+      <ul id="layer-list"></ul>
+    </div>
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-sliders"></i> שקיפות שכבה פעילה</div>
+      <label>שקיפות: <span id="opacity-val">100</span>%</label>
+      <input type="range" id="opacity-slider" min="0" max="100" value="100"
+             style="width:100%;accent-color:#4fc3f7;cursor:pointer;"
+             oninput="setActiveLayerOpacity(this.value)" />
+    </div>
+  </div>
+
+  <!-- ── Tab: POI ──────────────────────────────────────── -->
+  <div id="tab-poi" class="tab-panel">
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-plus"></i> הוסף נקודת עניין</div>
+      <button class="btn btn-success btn-full" id="add-poi-btn" onclick="startAddPOI()">
+        <i class="fa-solid fa-crosshairs"></i> לחץ על המפה להוספה
+      </button>
+      <p style="font-size:0.72rem;color:#8899aa;text-align:center">לחץ על הכפתור ואז לחץ על המפה</p>
+    </div>
+
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-list"></i> נקודות עניין (<span id="poi-count">0</span>)</div>
+      <input type="text" id="poi-search" placeholder="חיפוש נקודות..." oninput="filterPOIs(this.value)" />
+      <div class="cat-pills" id="cat-filter-pills">
+        <span class="cat-pill active" style="background:#1a2f4a;border-color:#4fc3f7;color:#4fc3f7" data-cat="all" onclick="filterByCategory('all',this)">הכל</span>
+      </div>
+      <ul id="poi-list"></ul>
+    </div>
+  </div>
+
+  <!-- ── Tab: Import ──────────────────────────────────── -->
+  <div id="tab-import" class="tab-panel">
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-file-code"></i> ייבוא GeoJSON</div>
+      <label class="file-btn" for="geojson-file">
+        <i class="fa-solid fa-upload"></i> בחר קובץ GeoJSON
+      </label>
+      <input type="file" id="geojson-file" accept=".geojson,.json" onchange="importGeoJSON(this)" />
+      <p style="font-size:0.72rem;color:#8899aa">תומך: .geojson, .json</p>
+    </div>
+
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-file-lines"></i> ייבוא KML / KMZ</div>
+      <label class="file-btn" for="kml-file">
+        <i class="fa-solid fa-upload"></i> בחר קובץ KML
+      </label>
+      <input type="file" id="kml-file" accept=".kml,.kmz" onchange="importKML(this)" />
+      <p style="font-size:0.72rem;color:#8899aa">תומך: .kml (Google Earth)</p>
+    </div>
+
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-table"></i> ייבוא CSV (קואורדינטות)</div>
+      <label class="file-btn" for="csv-file">
+        <i class="fa-solid fa-upload"></i> בחר קובץ CSV
+      </label>
+      <input type="file" id="csv-file" accept=".csv" onchange="importCSV(this)" />
+      <p style="font-size:0.72rem;color:#8899aa">עמודות נדרשות: lat, lng (או lon), name</p>
+    </div>
+
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-server"></i> ייבוא שכבת WMS</div>
+      <label>כתובת שרת WMS</label>
+      <input type="url" id="wms-url" placeholder="https://..." dir="ltr" />
+      <label>שם שכבה (layers)</label>
+      <input type="text" id="wms-layer" placeholder="layer_name" dir="ltr" />
+      <label>פורמט</label>
+      <select id="wms-format">
+        <option value="image/png">PNG</option>
+        <option value="image/jpeg">JPEG</option>
+      </select>
+      <button class="btn btn-primary btn-full" onclick="importWMS()">
+        <i class="fa-solid fa-plus"></i> הוסף שכבת WMS
+      </button>
+    </div>
+
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-link"></i> ייבוא GeoJSON מ-URL</div>
+      <label>כתובת URL</label>
+      <input type="url" id="geojson-url" placeholder="https://..." dir="ltr" />
+      <button class="btn btn-primary btn-full" onclick="importGeoJSONUrl()">
+        <i class="fa-solid fa-download"></i> טען שכבה
+      </button>
+    </div>
+
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-shapes"></i> ייבוא Shapefile (SHP)</div>
+      <label class="file-btn" for="shp-file">
+        <i class="fa-solid fa-upload"></i> בחר קובץ ZIP עם Shapefile
+      </label>
+      <input type="file" id="shp-file" accept=".zip" onchange="importSHP(this)" />
+      <p style="font-size:0.72rem;color:#8899aa">יש לדחוס קבצי .shp / .dbf / .prj לתוך קובץ ZIP אחד</p>
+    </div>
+
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-drafting-compass"></i> ייבוא DWG / DXF (AutoCAD)</div>
+      <label class="file-btn" for="dwg-file">
+        <i class="fa-solid fa-upload"></i> בחר קובץ DXF / DWG
+      </label>
+      <input type="file" id="dwg-file" accept=".dxf,.dwg" onchange="importDXF(this)" />
+      <label>מערכת קואורדינטות</label>
+      <select id="dwg-crs">
+        <option value="auto">זיהוי אוטומטי</option>
+        <option value="itm">ITM – ישראל (EPSG:2039)</option>
+        <option value="wgs84">WGS84 – קווי אורך/רוחב</option>
+      </select>
+      <p style="font-size:0.72rem;color:#8899aa">תומך DXF בלבד. קבצי DWG אינם נתמכים — יש לשמור מ-AutoCAD: <b style="color:#ffa94d">File → Save As → AutoCAD 2013 DXF</b> (או 2010 DXF).</p>
+    </div>
+
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-layer-group"></i> ייבוא LYR / LYRX (ArcGIS)</div>
+      <label class="file-btn" for="lyr-file">
+        <i class="fa-solid fa-upload"></i> בחר קובץ LYRX / LYR
+      </label>
+      <input type="file" id="lyr-file" accept=".lyrx,.lyr,.json" onchange="importLYR(this)" />
+      <p style="font-size:0.72rem;color:#8899aa">תומך LYRX (ArcGIS Pro – JSON). קבצי .lyr בינאריים אינם נתמכים ישירות.</p>
+    </div>
+
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-satellite-dish"></i> ייבוא ECW / GeoTIFF (רסטר)</div>
+
+      <div style="background:#0f2a1a;border:1px solid #2d6a2d;border-radius:6px;padding:10px;margin-bottom:12px;font-size:0.75rem;color:#a8d8a8;line-height:1.6">
+        <b style="color:#52b788"><i class="fa-solid fa-circle-info"></i> כיצד לטעון קובץ ECW:</b><br>
+        קבצי ECW אינם נתמכים ישירות בדפדפן — יש להמירם ל-GeoTIFF ב-QGIS:<br>
+        <span style="color:#ffe066">QGIS → Raster → Convert → Translate (GeoTIFF)</span><br>
+        לביצועים טובים בחרי <b>Cloud Optimized GeoTIFF (COG)</b> ביצוא.
+      </div>
+
+      <label class="file-btn" for="ecw-file">
+        <i class="fa-solid fa-upload"></i> בחר קובץ GeoTIFF / ECW מומר
+      </label>
+      <input type="file" id="ecw-file" accept=".tif,.tiff,.geotiff" onchange="importGeoTIFF(this)" />
+
+      <label style="margin-top:10px">שקיפות</label>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="range" id="raster-opacity" min="0" max="100" value="90"
+               oninput="setRasterOpacity(this.value)"
+               style="flex:1;accent-color:#52b788" />
+        <span id="raster-opacity-val" style="color:#52b788;min-width:30px">90%</span>
+      </div>
+
+      <button class="btn btn-danger btn-full" style="margin-top:8px" onclick="removeRasterLayer()">
+        <i class="fa-solid fa-trash"></i> הסר שכבת רסטר
+      </button>
+
+      <div id="raster-status" style="margin-top:8px;font-size:0.72rem;color:#8899aa;display:none"></div>
+      <p style="font-size:0.72rem;color:#8899aa;margin-top:8px">תומך: .tif / .tiff | קבצי ECW יש להמיר תחילה ל-GeoTIFF</p>
+    </div>
+  </div>
+
+  <!-- ── Tab: Basemap ─────────────────────────────────── -->
+  <div id="tab-basemap" class="tab-panel">
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-map"></i> שכבת רקע</div>
+      <div class="baselayer-grid">
+        <div class="baselayer-card active" id="bl-osm" onclick="setBaseLayer('osm')">
+          <i class="fa-solid fa-map-location-dot"></i>OpenStreetMap
+        </div>
+        <div class="baselayer-card" id="bl-satellite" onclick="setBaseLayer('satellite')">
+          <i class="fa-solid fa-satellite"></i>לוויין (Esri)
+        </div>
+        <div class="baselayer-card" id="bl-topo" onclick="setBaseLayer('topo')">
+          <i class="fa-solid fa-mountain"></i>טופוגרפי
+        </div>
+        <div class="baselayer-card" id="bl-dark" onclick="setBaseLayer('dark')">
+          <i class="fa-solid fa-moon"></i>כהה
+        </div>
+        <div class="baselayer-card" id="bl-orto" onclick="setBaseLayer('orto')">
+          <i class="fa-solid fa-image"></i>אורתופוטו נאות קדומים
+        </div>
+      </div>
+    </div>
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-sliders"></i> הגדרות תצוגה</div>
+      <label><input type="checkbox" id="chk-grid" onchange="toggleGrid(this.checked)" style="margin-left:6px" /> הצג רשת קואורדינטות</label>
+      <label style="margin-top:8px"><input type="checkbox" id="chk-scale" checked onchange="toggleScale(this.checked)" style="margin-left:6px" /> הצג סרגל קנה מידה</label>
+      <label style="margin-top:8px"><input type="checkbox" id="chk-measure" onchange="toggleMeasure(this.checked)" style="margin-left:6px" /> כלי מדידה</label>
+    </div>
+  </div>
+
+  <!-- ── Tab: Export ──────────────────────────────────── -->
+  <div id="tab-export" class="tab-panel">
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-file-export"></i> יצוא נקודות עניין</div>
+      <button class="btn btn-success btn-full" onclick="exportPOIsGeoJSON()">
+        <i class="fa-solid fa-download"></i> יצא כ-GeoJSON
+      </button>
+      <button class="btn btn-warning btn-full" onclick="exportPOIsCSV()">
+        <i class="fa-solid fa-table"></i> יצא כ-CSV
+      </button>
+    </div>
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-camera"></i> צילום מסך</div>
+      <button class="btn btn-primary btn-full" onclick="printMap()">
+        <i class="fa-solid fa-print"></i> הדפס מפה
+      </button>
+    </div>
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-floppy-disk"></i> שמירה מקומית</div>
+      <button class="btn btn-primary btn-full" onclick="saveToLocalStorage()">
+        <i class="fa-solid fa-floppy-disk"></i> שמור נקודות בדפדפן
+      </button>
+      <button class="btn btn-danger btn-full" onclick="clearLocalStorage()">
+        <i class="fa-solid fa-trash"></i> מחק שמירה
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Tab: Reports ─────────────────────────────────── -->
+  <div id="tab-reports" class="tab-panel">
+    <div class="section-card">
+      <div class="section-title" style="color:#ffa94d">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        דיווח על בעיה
+      </div>
+      <button class="btn btn-full" onclick="openReportForm()"
+              style="background:#3d2600;color:#ffa94d;border:1px solid #ffa94d;margin-bottom:4px;">
+        <i class="fa-solid fa-plus"></i> דווח על בעיה חדשה
+      </button>
+    </div>
+    <div class="section-card">
+      <div class="section-title" style="color:#ffa94d">
+        <i class="fa-solid fa-list"></i>
+        בעיות שדווחו (<span id="report-count">0</span>)
+        <button class="btn btn-success" style="margin-right:auto;padding:3px 10px;font-size:0.72rem" onclick="exportReports()">
+          <i class="fa-solid fa-download"></i> ייצוא GeoJSON
+        </button>
+      </div>
+      <div id="report-list">
+        <div style="text-align:center;padding:20px;color:#8899aa;font-size:0.8rem;">
+          <i class="fa-solid fa-triangle-exclamation" style="font-size:1.5rem;display:block;margin-bottom:8px;color:#2a4f7a"></i>
+          אין דיווחים עדיין
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     MAP
+════════════════════════════════════════════════════════ -->
+<div id="map-wrap">
+  <div id="map"></div>
+
+  <button id="toggle-sidebar" onclick="toggleSidebar()">
+    <i class="fa-solid fa-chevron-right" id="toggle-icon"></i>
+  </button>
+
+  <div id="map-toolbar">
+    <button class="map-tool-btn" title="בית" onclick="goHome()"><i class="fa-solid fa-house"></i></button>
+    <button class="map-tool-btn" title="מיקום נוכחי" onclick="geolocate()"><i class="fa-solid fa-location-crosshairs"></i></button>
+    <button class="map-tool-btn" title="זיהוי ישות" id="identify-btn" onclick="toggleIdentifyMode()"><i class="fa-solid fa-circle-info"></i></button>
+    <button class="map-tool-btn" title="מדוד מרחק" id="measure-btn" onclick="toggleMeasureMode()"><i class="fa-solid fa-ruler"></i></button>
+    <button class="map-tool-btn" title="נקה מדידה" onclick="clearMeasure()"><i class="fa-solid fa-eraser"></i></button>
+  </div>
+
+  <!-- Identify Panel -->
+  <div id="identify-panel">
+    <div id="identify-header">
+      <div id="identify-title"><i class="fa-solid fa-circle-info"></i> פרטי ישות</div>
+      <button id="identify-close" onclick="closeIdentifyPanel()" title="סגור"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div id="identify-layer-name">שכבה: <span id="identify-layer-label">–</span></div>
+    <div id="identify-body">
+      <div id="identify-empty">
+        <i class="fa-solid fa-arrow-pointer"></i>
+        לחץ על ישות במפה<br/>לצפייה בפרטיה
+      </div>
+    </div>
+    <div id="identify-geom" style="display:none">
+      סוג: <span id="identify-geom-type">–</span> &nbsp;|&nbsp;
+      <span id="identify-geom-coords"></span>
+    </div>
+  </div>
+
+  <div id="coords-bar">
+    <span id="coords-lat">Lat: –</span>
+    <span id="coords-lng">Lng: –</span>
+    <span id="coords-zoom">Zoom: –</span>
+    <span id="measure-display"></span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     MODAL – Add / Edit POI
+════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="poi-modal">
+  <div class="modal">
+    <h2 id="modal-title"><i class="fa-solid fa-map-pin"></i> הוסף נקודת עניין</h2>
+    <label>שם *</label>
+    <input type="text" id="poi-name-input" placeholder="שם הנקודה" />
+    <label>תיאור</label>
+    <textarea id="poi-desc-input" placeholder="תיאור קצר..."></textarea>
+    <label>קטגוריה</label>
+    <select id="poi-cat-input">
+      <option value="general">כללי 📍</option>
+      <option value="nature">טבע 🌿</option>
+      <option value="archaeology">ארכיאולוגיה 🏺</option>
+      <option value="water">מים 💧</option>
+      <option value="viewpoint">תצפית 🔭</option>
+      <option value="trail">שביל 🥾</option>
+      <option value="agriculture">חקלאות 🌾</option>
+      <option value="building">מבנה 🏛️</option>
+    </select>
+    <label>צבע סמן</label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px" id="color-picker">
+      <span class="color-dot" data-color="#ff6b6b" style="background:#ff6b6b" onclick="selectColor('#ff6b6b',this)"></span>
+      <span class="color-dot" data-color="#ffa94d" style="background:#ffa94d" onclick="selectColor('#ffa94d',this)"></span>
+      <span class="color-dot" data-color="#ffe066" style="background:#ffe066" onclick="selectColor('#ffe066',this)"></span>
+      <span class="color-dot" data-color="#52b788" style="background:#52b788" onclick="selectColor('#52b788',this)"></span>
+      <span class="color-dot" data-color="#4fc3f7" style="background:#4fc3f7" onclick="selectColor('#4fc3f7',this)"></span>
+      <span class="color-dot" data-color="#a29bfe" style="background:#a29bfe" onclick="selectColor('#a29bfe',this)"></span>
+      <span class="color-dot" data-color="#fd79a8" style="background:#fd79a8" onclick="selectColor('#fd79a8',this)"></span>
+      <span class="color-dot active" data-color="#ffffff" style="background:#ffffff" onclick="selectColor('#ffffff',this)"></span>
+    </div>
+    <label>קישור (אופציונלי)</label>
+    <input type="url" id="poi-link-input" placeholder="https://..." dir="ltr" />
+    <div class="modal-footer">
+      <button class="btn btn-danger" onclick="closePOIModal()">ביטול</button>
+      <button class="btn btn-success" onclick="savePOI()"><i class="fa-solid fa-check"></i> שמור</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ── Login Modal ─────────────────────────────────────── -->
+<div id="login-overlay">
+  <div id="login-box">
+    <div class="login-logo">
+      <img src="https://www.n-k.org.il/wp-content/themes/neot/images/He-n-k.png"
+           alt="נאות קדומים" onerror="this.style.display='none'" />
+    </div>
+    <h2>כניסה למערכת GIS</h2>
+    <p>נאות קדומים – מערכת מידע גאוגרפית</p>
+    <div id="login-err"></div>
+    <label class="login-lbl">כתובת מייל</label>
+    <input type="email" class="login-inp" id="login-email" placeholder="user@n-k.org.il" dir="ltr"
+           onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()" />
+    <label class="login-lbl">סיסמה</label>
+    <input type="password" class="login-inp" id="login-pass" placeholder="••••••••" dir="ltr"
+           onkeydown="if(event.key==='Enter')submitLogin()" />
+    <button class="login-go" onclick="submitLogin()">
+      <i class="fa-solid fa-right-to-bracket"></i> כניסה
+    </button>
+    <button class="login-guest" onclick="continueAsGuest()">המשך כאורח (צפייה ודיווח בלבד)</button>
+  </div>
+</div>
+
+<!-- ── Report Form Modal ────────────────────────────────── -->
+<div id="report-overlay">
+  <div id="report-box">
+    <h2><i class="fa-solid fa-triangle-exclamation"></i> דיווח על בעיה</h2>
+
+    <label class="form-label" style="font-size:0.78rem;color:#aac4de">פרטי המדווח <span style="color:#ff6b6b">*</span></label>
+    <input type="text" id="r-reporter" placeholder="שם מלא..."
+           style="width:100%;background:#1a2f4a;border:1px solid #2a4f7a;border-radius:5px;color:#e0e0e0;padding:8px 10px;font-size:0.84rem;margin-bottom:10px;outline:none;font-family:inherit;" />
+
+    <label class="form-label" style="font-size:0.78rem;color:#aac4de">טלפון ליצירת קשר</label>
+    <input type="tel" id="r-phone" placeholder="050-0000000" dir="ltr"
+           style="width:100%;background:#1a2f4a;border:1px solid #2a4f7a;border-radius:5px;color:#e0e0e0;padding:8px 10px;font-size:0.84rem;margin-bottom:10px;outline:none;font-family:inherit;" />
+
+    <label class="form-label" style="font-size:0.78rem;color:#aac4de">פירוט הבעיה <span style="color:#ff6b6b">*</span></label>
+    <textarea id="r-detail" placeholder="תאר את הבעיה בפירוט..."
+              style="width:100%;background:#1a2f4a;border:1px solid #2a4f7a;border-radius:5px;color:#e0e0e0;padding:8px 10px;font-size:0.84rem;margin-bottom:10px;outline:none;font-family:inherit;resize:vertical;min-height:80px;"></textarea>
+
+    <label class="form-label" style="font-size:0.78rem;color:#aac4de">צילום תמונה</label>
+    <label for="r-photo"
+           style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#1a2f4a;border:1px dashed #2a4f7a;border-radius:5px;cursor:pointer;color:#aac4de;font-size:0.82rem;margin-bottom:10px;">
+      <i class="fa-solid fa-camera" style="color:#4fc3f7;font-size:1.1rem"></i> צרף תמונה
+    </label>
+    <input type="file" id="r-photo" accept="image/*" capture="environment" style="display:none" onchange="rPreviewPhoto(this)" />
+    <div id="rphoto-preview-wrap">
+      <img id="rphoto-preview" src="" alt="תצוגה מקדימה" />
+      <button id="rphoto-clear" onclick="rClearPhoto()"><i class="fa-solid fa-xmark"></i> הסר תמונה</button>
+    </div>
+
+    <div style="background:#0d1b2a;border:1px solid #1e3a5f;border-radius:7px;padding:9px 12px;margin-bottom:14px;font-size:0.75rem;color:#8899aa;">
+      <i class="fa-solid fa-location-dot" style="color:#52b788"></i>
+      <span id="r-loc-label">מיקום ייקבע אוטומטית לפי ה-GPS...</span>
+    </div>
+
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-danger" style="flex:1" onclick="closeReportForm()">ביטול</button>
+      <button class="btn btn-warning" style="flex:2;justify-content:center" onclick="submitReport()">
+        <i class="fa-solid fa-paper-plane"></i> שלח דיווח
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Lightbox -->
+<div id="r-lightbox" onclick="rCloseLightbox()">
+  <button id="r-lightbox-close" onclick="rCloseLightbox()"><i class="fa-solid fa-xmark"></i></button>
+  <img id="r-lightbox-img" src="" alt="" />
+</div>
+
+<div id="toast"></div>
+
+<style>
+  .color-dot {
+    width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
+    border: 2px solid transparent; transition: transform 0.15s, border-color 0.15s;
+  }
+  .color-dot:hover { transform: scale(1.2); }
+  .color-dot.active { border-color: #4fc3f7; transform: scale(1.2); }
+</style>
+
+<script>
+
+// ═══════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════
+const NEOT_CENTER = [31.9499, 34.9797];
+const NEOT_ZOOM   = 14;
+
+let map, scaleControl;
+let baseLayers = {};
+let currentBaseLayer = 'osm';
+let importedLayers   = {};     // id -> { layer, name, color, visible }
+let pois             = [];     // array of POI objects
+let poiMarkers       = {};     // id -> L.marker
+let poiIdCounter     = 0;
+let addPOIMode       = false;
+let pendingLatLng    = null;
+let editingPOIId     = null;
+let selectedColor    = '#ffffff';
+let currentCatFilter = 'all';
+let measureMode      = false;
+let identifyMode     = false;
+let identifyHighlight = null;
+let measurePoints    = [];
+let measureLayer     = null;
+let activeLayerOpacity= {};
+
+// ═══════════════════════════════════════════════════════
+//  INIT MAP
+// ═══════════════════════════════════════════════════════
+function initMap() {
+  map = L.map('map', { zoomControl: false }).setView(NEOT_CENTER, NEOT_ZOOM);
+
+  // Base layers
+  baseLayers.osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors', maxZoom: 19
+  });
+  baseLayers.satellite = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '© Esri', maxZoom: 19
+  });
+  baseLayers.topo = L.tileLayer(
+    'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenTopoMap', maxZoom: 17
+  });
+  baseLayers.dark = L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '© CartoDB', maxZoom: 19
+  });
+  baseLayers.orto = L.tileLayer('./Orto_tiles/{z}/{x}/{y}.png', {
+    attribution: '© נאות קדומים', minZoom: 14, maxZoom: 20, tms: true,
+    errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+  });
+
+  baseLayers.osm.addTo(map);
+
+  // Scale control
+  scaleControl = L.control.scale({ imperial: false, metric: true, position: 'bottomleft' }).addTo(map);
+
+  // Zoom control (custom position)
+  L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+  // Force correct map size after render
+  setTimeout(() => map.invalidateSize(), 50);
+  setTimeout(() => map.invalidateSize(), 300);
+  setTimeout(() => map.invalidateSize(), 800);
+
+  // Neot Kdomim boundary polygon (approximate)
+  addNeotBoundary();
+
+  // Coordinates bar
+  map.on('mousemove', e => {
+    document.getElementById('coords-lat').textContent = 'Lat: ' + e.latlng.lat.toFixed(5);
+    document.getElementById('coords-lng').textContent = 'Lng: ' + e.latlng.lng.toFixed(5);
+  });
+  map.on('zoomend', () => {
+    document.getElementById('coords-zoom').textContent = 'Zoom: ' + map.getZoom();
+  });
+  document.getElementById('coords-zoom').textContent = 'Zoom: ' + map.getZoom();
+
+  // Click handler
+  map.on('click', onMapClick);
+
+  // Load saved POIs
+  loadFromLocalStorage();
+}
+
+// ═══════════════════════════════════════════════════════
+//  NEOT KDOMIM BOUNDARY
+// ═══════════════════════════════════════════════════════
+function addNeotBoundary() {
+  // Real boundary polygon from OpenStreetMap (Nominatim)
+  const boundary = [
+    [31.9505145,34.9674654],[31.9493588,34.9678381],[31.9492648,34.9678684],
+    [31.9489645,34.9687371],[31.9487137,34.9691698],[31.9484669,34.9696215],
+    [31.947695, 34.9701638],[31.9469387,34.9710824],[31.9468315,34.9712302],
+    [31.9465853,34.971418], [31.9467303,34.9720176],[31.9466578,34.9737796],
+    [31.9466364,34.9752599],[31.9445835,34.978713], [31.9445096,34.9788271],
+    [31.9442173,34.978667], [31.9442908,34.9796535],[31.9439136,34.979738],
+    [31.9439136,34.9799176],[31.9436608,34.9821107],[31.9431859,34.983682],
+    [31.9430508,34.9842826],[31.9438872,34.9841402],[31.9441084,34.9852804],
+    [31.9439062,34.9870858],[31.9441185,34.9880622],[31.9445504,34.9878557],
+    [31.9453502,34.9879413],[31.9456339,34.9883413],[31.9456944,34.9893717],
+    [31.9453782,34.9903308],[31.9449585,34.9905017],[31.9446123,34.9912457],
+    [31.9442057,34.9913384],[31.9452763,34.9920276],[31.9479297,34.9898318],
+    [31.950141, 34.990157], [31.9527694,34.9902924],[31.9547124,34.9826841],
+    [31.9546862,34.9799822],[31.9550582,34.9788493],[31.9554611,34.976893],
+    [31.9567592,34.9745623],[31.9567245,34.9728658],[31.9567099,34.9699661],
+    [31.9557887,34.9689725],[31.9554432,34.9686657],[31.9537644,34.9681628],
+    [31.9517207,34.9681521],[31.9511952,34.9679346],[31.9505145,34.9674654]
+  ];
+
+  const poly = L.polygon(boundary, {
+    color: '#4fc3f7',
+    weight: 2.5,
+    fillColor: '#4fc3f7',
+    fillOpacity: 0.06,
+    dashArray: '6 4'
+  }).addTo(map);
+
+  importedLayers['base-neot'] = { layer: poly, name: 'תחום השמורה', color: '#4fc3f7', visible: true };
+
+  // Attach identify to boundary
+  poly.on('click', function(e) {
+    if (!identifyMode) return;
+    L.DomEvent.stopPropagation(e);
+    showIdentifyResult({
+      properties: { שם: 'תחום השמורה', סוג: 'גבול שמורת נאות קדומים', מקור: 'גז/108/2' },
+      geometry: { type: 'Polygon' }
+    }, 'תחום השמורה', poly);
+  });
+
+  map.fitBounds(poly.getBounds(), { padding: [30, 30] });
+  renderLayerList();
+}
+
+// ═══════════════════════════════════════════════════════
+//  TAB SYSTEM
+// ═══════════════════════════════════════════════════════
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + tab).classList.add('active');
+    if (tab === 'reports') renderReportList();
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+//  SIDEBAR TOGGLE
+// ═══════════════════════════════════════════════════════
+let sidebarOpen = true;
+function toggleSidebar() {
+  const sb   = document.getElementById('sidebar');
+  const wrap = document.getElementById('map-wrap');
+  const icon = document.getElementById('toggle-icon');
+  sidebarOpen = !sidebarOpen;
+  sb.classList.toggle('collapsed', !sidebarOpen);
+  wrap.classList.toggle('sidebar-collapsed', !sidebarOpen);
+  document.getElementById('map').classList.toggle('sidebar-collapsed', !sidebarOpen);
+  icon.className = sidebarOpen ? 'fa-solid fa-chevron-right' : 'fa-solid fa-chevron-left';
+  setTimeout(() => map.invalidateSize(), 320);
+}
+
+// ═══════════════════════════════════════════════════════
+//  BASE LAYERS
+// ═══════════════════════════════════════════════════════
+function setBaseLayer(id) {
+  if (currentBaseLayer === id) return;
+  map.removeLayer(baseLayers[currentBaseLayer]);
+  baseLayers[id].addTo(map);
+  baseLayers[id].bringToBack();
+  currentBaseLayer = id;
+  document.querySelectorAll('.baselayer-card').forEach(c => c.classList.remove('active'));
+  document.getElementById('bl-' + id).classList.add('active');
+}
+
+// ═══════════════════════════════════════════════════════
+//  LAYER MANAGEMENT
+// ═══════════════════════════════════════════════════════
+let layerColorIdx = 0;
+const LAYER_COLORS = ['#4fc3f7','#ffa94d','#ff6b6b','#a29bfe','#fd79a8','#ffe066','#52b788'];
+
+function addImportedLayer(layer, name) {
+  const id    = 'layer_' + Date.now();
+  const color = LAYER_COLORS[layerColorIdx++ % LAYER_COLORS.length];
+  importedLayers[id] = { layer, name, color, visible: true };
+
+  // Attach identify click handler to every sub-layer
+  layer.eachLayer ? layer.eachLayer(sub => attachIdentify(sub, name)) : attachIdentify(layer, name);
+
+  layer.addTo(map);
+  renderLayerList();
+  try { map.fitBounds(layer.getBounds(), { padding: [30, 30] }); } catch(e) {}
+  return id;
+}
+
+function attachIdentify(subLayer, layerName) {
+  if (!subLayer.on) return;
+  subLayer.on('click', function(e) {
+    if (!identifyMode) return;
+    L.DomEvent.stopPropagation(e);
+    const feature = subLayer.feature || null;
+    if (feature) {
+      showIdentifyResult(feature, layerName, subLayer);
+    } else if (subLayer.getLatLng || subLayer.getBounds) {
+      // Layer without feature (e.g. base boundary polygon)
+      showIdentifyResult({ properties: {}, geometry: null }, layerName, subLayer);
+    }
+  });
+
+  // Hover highlight
+  subLayer.on('mouseover', function() {
+    if (!identifyMode) return;
+    if (subLayer.setStyle) subLayer.setStyle({ weight: 3, opacity: 1 });
+    map.getContainer().style.cursor = 'pointer';
+  });
+  subLayer.on('mouseout', function() {
+    if (subLayer.setStyle) subLayer.setStyle({ weight: subLayer.options?.weight || 2, opacity: subLayer.options?.opacity || 0.8 });
+    if (identifyMode) map.getContainer().style.cursor = 'help';
+  });
+}
+
+function renderLayerList() {
+  const ul = document.getElementById('layer-list');
+  ul.innerHTML = '';
+  for (const [id, info] of Object.entries(importedLayers)) {
+    const li = document.createElement('li');
+    li.className = 'layer-item';
+    li.id = id + '-item';
+    li.innerHTML = `
+      <span class="layer-color-swatch" style="background:${info.color}"></span>
+      <span class="layer-name" title="${info.name}">${info.name}</span>
+      <button class="layer-toggle ${info.visible ? '' : 'off'}" title="הצג/הסתר" onclick="toggleLayerItem('${id}')">
+        <i class="fa-solid ${info.visible ? 'fa-eye' : 'fa-eye-slash'}"></i>
+      </button>
+      <button class="icon-btn zoom" title="תקריב" onclick="zoomToLayer('${id}')"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+      ${id !== 'base-neot' ? `<button class="icon-btn" title="מחק שכבה" onclick="removeLayer('${id}')"><i class="fa-solid fa-trash"></i></button>` : ''}
+    `;
+    ul.appendChild(li);
+  }
+}
+
+function toggleLayerItem(id) {
+  const info = importedLayers[id];
+  if (!info) return;
+  if (info.visible) { map.removeLayer(info.layer); info.visible = false; }
+  else              { info.layer.addTo(map);        info.visible = true;  }
+  renderLayerList();
+}
+
+function zoomToLayer(id) {
+  const info = importedLayers[id];
+  if (!info) return;
+  try { map.fitBounds(info.layer.getBounds(), { padding: [40, 40] }); } catch(e) { toast('לא ניתן לתקריב לשכבה זו'); }
+}
+
+function removeLayer(id) {
+  if (!importedLayers[id]) return;
+  map.removeLayer(importedLayers[id].layer);
+  delete importedLayers[id];
+  renderLayerList();
+  toast('שכבה הוסרה');
+}
+
+function setActiveLayerOpacity(val) {
+  document.getElementById('opacity-val').textContent = val;
+  // Apply to last imported layer
+  const ids = Object.keys(importedLayers);
+  if (ids.length === 0) return;
+  const last = importedLayers[ids[ids.length - 1]];
+  if (last && last.layer.setOpacity) last.layer.setOpacity(val / 100);
+  else if (last && last.layer.setStyle) last.layer.setStyle({ opacity: val / 100, fillOpacity: val / 200 });
+}
+
+// ═══════════════════════════════════════════════════════
+//  ADD POI
+// ═══════════════════════════════════════════════════════
+function startAddPOI() {
+  addPOIMode = !addPOIMode;
+  const btn = document.getElementById('add-poi-btn');
+  if (addPOIMode) {
+    btn.innerHTML = '<i class="fa-solid fa-ban"></i> בטל הוספה';
+    btn.style.background = '#3d0000';
+    map.getContainer().style.cursor = 'crosshair';
+    toast('לחץ על המפה לבחירת מיקום');
+  } else {
+    btn.innerHTML = '<i class="fa-solid fa-crosshairs"></i> לחץ על המפה להוספה';
+    btn.style.background = '';
+    map.getContainer().style.cursor = '';
+  }
+}
+
+function onMapClick(e) {
+  if (measureMode) { addMeasurePoint(e.latlng); return; }
+  if (identifyMode) { clearIdentifyHighlight(); return; }  // click on empty = deselect
+  if (!addPOIMode) return;
+  pendingLatLng = e.latlng;
+  editingPOIId  = null;
+  document.getElementById('poi-name-input').value = '';
+  document.getElementById('poi-desc-input').value = '';
+  document.getElementById('poi-cat-input').value  = 'general';
+  document.getElementById('poi-link-input').value = '';
+  document.getElementById('modal-title').innerHTML = '<i class="fa-solid fa-map-pin"></i> הוסף נקודת עניין';
+  selectColor('#ffffff', document.querySelector('.color-dot[data-color="#ffffff"]'));
+  openPOIModal();
+  startAddPOI(); // toggle off
+}
+
+const CAT_ICONS = {
+  general:     { emoji: '📍', color: '#ffffff' },
+  nature:      { emoji: '🌿', color: '#52b788' },
+  archaeology: { emoji: '🏺', color: '#ffa94d' },
+  water:       { emoji: '💧', color: '#4fc3f7' },
+  viewpoint:   { emoji: '🔭', color: '#ffe066' },
+  trail:       { emoji: '🥾', color: '#ff6b6b' },
+  agriculture: { emoji: '🌾', color: '#a29bfe' },
+  building:    { emoji: '🏛️', color: '#fd79a8' },
+};
+
+function createPOIIcon(cat, color) {
+  const info = CAT_ICONS[cat] || CAT_ICONS.general;
+  return L.divIcon({
+    className: '',
+    html: `<div style="
+      background:${color};
+      border:2px solid rgba(0,0,0,0.4);
+      border-radius:50% 50% 50% 0;
+      transform:rotate(-45deg);
+      width:28px;height:28px;
+      display:flex;align-items:center;justify-content:center;
+      box-shadow:0 2px 6px rgba(0,0,0,0.5);
+    "><span style="transform:rotate(45deg);font-size:13px">${info.emoji}</span></div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 28],
+    popupAnchor: [0, -30]
+  });
+}
+
+function savePOI() {
+  const name = document.getElementById('poi-name-input').value.trim();
+  if (!name) { toast('יש להזין שם לנקודה'); return; }
+  const cat   = document.getElementById('poi-cat-input').value;
+  const desc  = document.getElementById('poi-desc-input').value.trim();
+  const link  = document.getElementById('poi-link-input').value.trim();
+  const color = selectedColor;
+
+  if (editingPOIId !== null) {
+    // Update existing
+    const poi = pois.find(p => p.id === editingPOIId);
+    if (poi) {
+      poi.name = name; poi.cat = cat; poi.desc = desc; poi.link = link; poi.color = color;
+      const marker = poiMarkers[editingPOIId];
+      marker.setIcon(createPOIIcon(cat, color));
+      marker.setPopupContent(buildPopupHtml(poi));
+    }
+  } else {
+    // Create new
+    const id = ++poiIdCounter;
+    const poi = { id, name, cat, desc, link, color, lat: pendingLatLng.lat, lng: pendingLatLng.lng };
+    pois.push(poi);
+    const marker = L.marker([poi.lat, poi.lng], { icon: createPOIIcon(cat, color) })
+      .addTo(map)
+      .bindPopup(buildPopupHtml(poi), { maxWidth: 280, className: 'poi-popup' });
+    marker.on('click', () => marker.openPopup());
+    poiMarkers[id] = marker;
+  }
+
+  renderPOIList();
+  renderCatPills();
+  closePOIModal();
+  toast(editingPOIId !== null ? 'נקודה עודכנה' : 'נקודה נוספה');
+}
+
+function buildPopupHtml(poi) {
+  const info = CAT_ICONS[poi.cat] || CAT_ICONS.general;
+  return `
+    <div style="min-width:200px;font-family:Segoe UI,Arial,sans-serif;direction:rtl">
+      <div style="font-weight:700;font-size:1rem;margin-bottom:4px">${info.emoji} ${poi.name}</div>
+      <div style="font-size:0.75rem;color:#888;margin-bottom:6px">${getCatLabel(poi.cat)}</div>
+      ${poi.desc ? `<div style="font-size:0.82rem;margin-bottom:6px">${poi.desc}</div>` : ''}
+      <div style="font-size:0.72rem;color:#aaa;margin-bottom:8px">
+        📍 ${poi.lat.toFixed(5)}, ${poi.lng.toFixed(5)}
+      </div>
+      ${poi.link ? `<a href="${poi.link}" target="_blank" style="font-size:0.78rem;color:#4fc3f7">🔗 פתח קישור</a><br/>` : ''}
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button onclick="editPOI(${poi.id})" style="padding:3px 10px;background:#0f3460;border:1px solid #4fc3f7;color:#4fc3f7;border-radius:4px;cursor:pointer;font-size:0.75rem">ערוך</button>
+        <button onclick="deletePOI(${poi.id})" style="padding:3px 10px;background:#3d0000;border:1px solid #ff6b6b;color:#ff6b6b;border-radius:4px;cursor:pointer;font-size:0.75rem">מחק</button>
+      </div>
+    </div>`;
+}
+
+function getCatLabel(cat) {
+  const labels = {
+    general:'כללי', nature:'טבע', archaeology:'ארכיאולוגיה',
+    water:'מים', viewpoint:'תצפית', trail:'שביל',
+    agriculture:'חקלאות', building:'מבנה'
+  };
+  return labels[cat] || cat;
+}
+
+function editPOI(id) {
+  const poi = pois.find(p => p.id === id);
+  if (!poi) return;
+  editingPOIId = id;
+  document.getElementById('poi-name-input').value  = poi.name;
+  document.getElementById('poi-desc-input').value  = poi.desc;
+  document.getElementById('poi-cat-input').value   = poi.cat;
+  document.getElementById('poi-link-input').value  = poi.link || '';
+  document.getElementById('modal-title').innerHTML = '<i class="fa-solid fa-pen"></i> ערוך נקודת עניין';
+  selectColor(poi.color, document.querySelector(`.color-dot[data-color="${poi.color}"]`) || document.querySelector('.color-dot'));
+  openPOIModal();
+  map.closePopup();
+}
+
+function deletePOI(id) {
+  map.removeLayer(poiMarkers[id]);
+  delete poiMarkers[id];
+  pois = pois.filter(p => p.id !== id);
+  renderPOIList();
+  renderCatPills();
+  map.closePopup();
+  toast('נקודה נמחקה');
+}
+
+// ── POI List ────────────────────────────────────────────
+function renderPOIList(filter = '') {
+  const ul   = document.getElementById('poi-list');
+  const filt = filter.toLowerCase();
+  ul.innerHTML = '';
+
+  const filtered = pois.filter(p => {
+    const matchCat  = currentCatFilter === 'all' || p.cat === currentCatFilter;
+    const matchText = !filt || p.name.toLowerCase().includes(filt) || (p.desc && p.desc.toLowerCase().includes(filt));
+    return matchCat && matchText;
+  });
+
+  document.getElementById('poi-count').textContent = pois.length;
+
+  filtered.forEach(poi => {
+    const info = CAT_ICONS[poi.cat] || CAT_ICONS.general;
+    const li = document.createElement('li');
+    li.className = 'poi-item';
+    li.innerHTML = `
+      <span class="poi-icon-badge">${info.emoji}</span>
+      <span class="poi-name" title="${poi.name}">${poi.name}</span>
+      <button class="icon-btn zoom" title="תקריב" onclick="flyToPOI(${poi.id})"><i class="fa-solid fa-location-dot"></i></button>
+      <button class="icon-btn" title="ערוך" onclick="editPOI(${poi.id})" style="color:#4fc3f7"><i class="fa-solid fa-pen"></i></button>
+      <button class="icon-btn" title="מחק" onclick="deletePOI(${poi.id})"><i class="fa-solid fa-trash"></i></button>
+    `;
+    ul.appendChild(li);
+  });
+
+  if (filtered.length === 0) {
+    ul.innerHTML = '<li style="color:#8899aa;font-size:0.78rem;padding:8px;text-align:center">אין נקודות להצגה</li>';
+  }
+}
+
+function flyToPOI(id) {
+  const poi = pois.find(p => p.id === id);
+  if (!poi) return;
+  map.flyTo([poi.lat, poi.lng], 17, { duration: 1.2 });
+  setTimeout(() => { if (poiMarkers[id]) poiMarkers[id].openPopup(); }, 1300);
+}
+
+function filterPOIs(val) { renderPOIList(val); }
+
+function filterByCategory(cat, el) {
+  currentCatFilter = cat;
+  document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  renderPOIList(document.getElementById('poi-search').value);
+}
+
+function renderCatPills() {
+  const cats = [...new Set(pois.map(p => p.cat))];
+  const container = document.getElementById('cat-filter-pills');
+  container.innerHTML = `<span class="cat-pill ${currentCatFilter==='all'?'active':''}" style="background:#1a2f4a;border-color:#4fc3f7;color:#4fc3f7" data-cat="all" onclick="filterByCategory('all',this)">הכל</span>`;
+  cats.forEach(cat => {
+    const info  = CAT_ICONS[cat] || CAT_ICONS.general;
+    const active = currentCatFilter === cat ? 'active' : '';
+    const span  = document.createElement('span');
+    span.className = `cat-pill ${active}`;
+    span.style = `background:#1a2f4a;border-color:${info.color};color:${info.color}`;
+    span.dataset.cat = cat;
+    span.textContent = info.emoji + ' ' + getCatLabel(cat);
+    span.onclick = function() { filterByCategory(cat, this); };
+    container.appendChild(span);
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+//  MODAL
+// ═══════════════════════════════════════════════════════
+function openPOIModal()  { document.getElementById('poi-modal').classList.add('open'); }
+function closePOIModal() { document.getElementById('poi-modal').classList.remove('open'); editingPOIId = null; }
+
+function selectColor(color, el) {
+  selectedColor = color;
+  document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+  if (el) el.classList.add('active');
+}
+
+// ═══════════════════════════════════════════════════════
+//  IMPORT
+// ═══════════════════════════════════════════════════════
+function importGeoJSON(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      const layer = L.geoJSON(data, {
+        style: { color: LAYER_COLORS[layerColorIdx % LAYER_COLORS.length], weight: 2, fillOpacity: 0.15 },
+        onEachFeature: (feature, layer) => {
+          if (feature.properties) {
+            const props = Object.entries(feature.properties)
+              .map(([k,v]) => `<b>${k}:</b> ${v}`).join('<br/>');
+            layer.bindPopup(`<div dir="auto" style="max-width:250px;font-size:0.8rem">${props}</div>`);
+          }
+        },
+        pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
+          radius: 7, fillColor: LAYER_COLORS[layerColorIdx % LAYER_COLORS.length],
+          color: '#fff', weight: 1, fillOpacity: 0.9
+        })
+      });
+      addImportedLayer(layer, file.name);
+      toast('GeoJSON נטען: ' + file.name);
+    } catch(err) { toast('שגיאה בקריאת הקובץ: ' + err.message); }
+  };
+  reader.readAsText(file);
+  input.value = '';
+}
+
+function importKML(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const layer = omnivore.kml.parse(e.target.result);
+      layer.setStyle({ color: LAYER_COLORS[layerColorIdx % LAYER_COLORS.length], weight: 2, fillOpacity: 0.15 });
+      addImportedLayer(layer, file.name);
+      toast('KML נטען: ' + file.name);
+    } catch(err) { toast('שגיאה בקריאת KML: ' + err.message); }
+  };
+  reader.readAsText(file);
+  input.value = '';
+}
+
+function importCSV(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const lines  = e.target.result.trim().split('\n');
+      const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const latIdx = header.findIndex(h => h === 'lat' || h === 'latitude');
+      const lngIdx = header.findIndex(h => h === 'lng' || h === 'lon' || h === 'longitude');
+      const namIdx = header.findIndex(h => h === 'name' || h === 'title');
+
+      if (latIdx < 0 || lngIdx < 0) { toast('לא נמצאו עמודות lat/lng'); return; }
+
+      const markers = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',').map(c => c.trim());
+        const lat  = parseFloat(cols[latIdx]);
+        const lng  = parseFloat(cols[lngIdx]);
+        if (isNaN(lat) || isNaN(lng)) continue;
+        const name = namIdx >= 0 ? cols[namIdx] : `נקודה ${i}`;
+        const m    = L.circleMarker([lat, lng], {
+          radius: 7, fillColor: LAYER_COLORS[layerColorIdx % LAYER_COLORS.length],
+          color: '#fff', weight: 1.5, fillOpacity: 0.9
+        }).bindPopup(`<b>${name}</b><br/>${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+        markers.push(m);
+      }
+
+      const group = L.featureGroup(markers);
+      addImportedLayer(group, file.name);
+      toast(`CSV נטען: ${markers.length} נקודות`);
+    } catch(err) { toast('שגיאה ב-CSV: ' + err.message); }
+  };
+  reader.readAsText(file);
+  input.value = '';
+}
+
+function importWMS() {
+  const url    = document.getElementById('wms-url').value.trim();
+  const layers = document.getElementById('wms-layer').value.trim();
+  const format = document.getElementById('wms-format').value;
+  if (!url || !layers) { toast('יש להזין URL ושם שכבה'); return; }
+
+  try {
+    const wms = L.tileLayer.wms(url, {
+      layers, format, transparent: true, version: '1.1.1',
+      attribution: 'WMS Layer'
+    });
+    const wrapper = L.layerGroup([wms]);
+    // Wrap so we can get bounds (WMS has no bounds)
+    addImportedLayer(wrapper, 'WMS: ' + layers);
+    wms.addTo(map);
+    toast('שכבת WMS נוספה');
+  } catch(err) { toast('שגיאה ב-WMS: ' + err.message); }
+}
+
+function importGeoJSONUrl() {
+  const url = document.getElementById('geojson-url').value.trim();
+  if (!url) { toast('יש להזין כתובת URL'); return; }
+  toast('טוען שכבה...');
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      const layer = L.geoJSON(data, {
+        style: { color: LAYER_COLORS[layerColorIdx % LAYER_COLORS.length], weight: 2, fillOpacity: 0.15 },
+        onEachFeature: (feature, layer) => {
+          if (feature.properties) {
+            const props = Object.entries(feature.properties)
+              .map(([k,v]) => `<b>${k}:</b> ${v}`).join('<br/>');
+            layer.bindPopup(`<div dir="auto" style="max-width:250px;font-size:0.8rem">${props}</div>`);
+          }
+        }
+      });
+      addImportedLayer(layer, url.split('/').pop() || 'GeoJSON URL');
+      toast('שכבה נטענה מ-URL');
+    })
+    .catch(err => toast('שגיאה בטעינה: ' + err.message));
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  IDENTIFY TOOL
+// ═══════════════════════════════════════════════════════
+function toggleIdentifyMode() {
+  identifyMode = !identifyMode;
+  const btn = document.getElementById('identify-btn');
+  btn.classList.toggle('active', identifyMode);
+  map.getContainer().style.cursor = identifyMode ? 'help' : '';
+
+  if (!identifyMode) {
+    clearIdentifyHighlight();
+    document.getElementById('identify-panel').classList.remove('open');
+  } else {
+    // Turn off other modes
+    if (addPOIMode) startAddPOI();
+    if (measureMode) toggleMeasureMode();
+    document.getElementById('identify-panel').classList.add('open');
+    toast('לחץ על ישות במפה לצפייה בפרטים');
+  }
+}
+
+function closeIdentifyPanel() {
+  identifyMode = false;
+  document.getElementById('identify-btn').classList.remove('active');
+  document.getElementById('identify-panel').classList.remove('open');
+  map.getContainer().style.cursor = '';
+  clearIdentifyHighlight();
+}
+
+function clearIdentifyHighlight() {
+  if (identifyHighlight) {
+    map.removeLayer(identifyHighlight);
+    identifyHighlight = null;
+  }
+}
+
+function showIdentifyResult(feature, layerName, originalLayer) {
+  const panel = document.getElementById('identify-panel');
+  const body  = document.getElementById('identify-body');
+  const empty = document.getElementById('identify-empty');
+  const geomBar = document.getElementById('identify-geom');
+
+  panel.classList.add('open');
+  document.getElementById('identify-layer-label').textContent = layerName;
+
+  const props = feature.properties || {};
+  const keys  = Object.keys(props).filter(k => props[k] !== null && props[k] !== undefined && String(props[k]).trim() !== '');
+
+  if (keys.length === 0) {
+    body.innerHTML = '<div id="identify-empty"><i class="fa-solid fa-database"></i>אין מאפיינים לישות זו</div>';
+    geomBar.style.display = 'none';
+    return;
+  }
+
+  body.innerHTML = keys.map(k => {
+    const v = props[k];
+    const isNull = (v === null || v === undefined || String(v).trim() === '' || String(v) === 'null');
+    return `<div class="identify-row">
+      <div class="identify-key">${k}</div>
+      <div class="identify-val ${isNull ? 'null' : ''}">${isNull ? '–' : String(v)}</div>
+    </div>`;
+  }).join('');
+
+  // Geometry info
+  const geom = feature.geometry;
+  if (geom) {
+    geomBar.style.display = 'flex';
+    const typeHe = {
+      'Point':'נקודה', 'MultiPoint':'ריבוי נקודות',
+      'LineString':'קו', 'MultiLineString':'ריבוי קווים',
+      'Polygon':'פוליגון', 'MultiPolygon':'ריבוי פוליגונים'
+    };
+    document.getElementById('identify-geom-type').textContent = typeHe[geom.type] || geom.type;
+
+    // Centroid coords
+    let c = '';
+    try {
+      const b = originalLayer.getBounds ? originalLayer.getBounds().getCenter() : null;
+      if (b) c = b.lat.toFixed(5) + ', ' + b.lng.toFixed(5);
+    } catch(e) {}
+    document.getElementById('identify-geom-coords').textContent = c ? '📍 ' + c : '';
+  } else {
+    geomBar.style.display = 'none';
+  }
+
+  // Highlight the feature
+  clearIdentifyHighlight();
+  try {
+    const geomType = feature.geometry?.type || '';
+    if (geomType === 'Point' || geomType === 'MultiPoint') {
+      identifyHighlight = L.geoJSON(feature, {
+        pointToLayer: (f, ll) => L.circleMarker(ll, {
+          radius: 12, color: '#ffe066', weight: 3,
+          fillColor: '#ffe066', fillOpacity: 0.3
+        })
+      }).addTo(map);
+    } else {
+      identifyHighlight = L.geoJSON(feature, {
+        style: {
+          color: '#ffe066', weight: 3,
+          fillColor: '#ffe066', fillOpacity: 0.25,
+          dashArray: null
+        }
+      }).addTo(map);
+    }
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════
+//  MEASURE TOOL
+// ═══════════════════════════════════════════════════════
+function toggleMeasureMode() {
+  measureMode = !measureMode;
+  const btn = document.getElementById('measure-btn');
+  btn.classList.toggle('active', measureMode);
+  map.getContainer().style.cursor = measureMode ? 'crosshair' : '';
+  if (!measureMode) clearMeasure();
+  else toast('לחץ על המפה למדידת מרחק. לחץ שוב לניקוי.');
+}
+
+function addMeasurePoint(latlng) {
+  measurePoints.push(latlng);
+  if (measureLayer) { map.removeLayer(measureLayer); }
+
+  const latlngs = measurePoints;
+  measureLayer = L.layerGroup();
+
+  if (latlngs.length > 1) {
+    L.polyline(latlngs, { color: '#ffe066', weight: 2.5, dashArray: '6 3' }).addTo(measureLayer);
+  }
+  latlngs.forEach((pt, i) => {
+    L.circleMarker(pt, { radius: 5, fillColor: '#ffe066', color: '#fff', weight: 1, fillOpacity: 1 }).addTo(measureLayer);
+  });
+
+  measureLayer.addTo(map);
+
+  if (latlngs.length > 1) {
+    let total = 0;
+    for (let i = 1; i < latlngs.length; i++) total += latlngs[i-1].distanceTo(latlngs[i]);
+    const dist = total >= 1000 ? (total/1000).toFixed(2) + ' ק"מ' : Math.round(total) + ' מ׳';
+    document.getElementById('measure-display').textContent = '📏 ' + dist;
+  }
+}
+
+function clearMeasure() {
+  measurePoints = [];
+  if (measureLayer) { map.removeLayer(measureLayer); measureLayer = null; }
+  document.getElementById('measure-display').textContent = '';
+}
+
+function toggleMeasure(checked) {
+  if (!checked && measureMode) toggleMeasureMode();
+}
+
+// ═══════════════════════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════════════════════
+function goHome() {
+  map.flyTo(NEOT_CENTER, NEOT_ZOOM, { duration: 1 });
+}
+
+function geolocate() {
+  if (!navigator.geolocation) { toast('הדפדפן אינו תומך בגיאוגרמה'); return; }
+  navigator.geolocation.getCurrentPosition(pos => {
+    const latlng = [pos.coords.latitude, pos.coords.longitude];
+    L.marker(latlng, {
+      icon: L.divIcon({
+        className:'',
+        html:'<div style="width:14px;height:14px;background:#4fc3f7;border:3px solid #fff;border-radius:50%;box-shadow:0 0 12px #4fc3f7"></div>',
+        iconSize:[14,14], iconAnchor:[7,7]
+      })
+    }).addTo(map).bindPopup('המיקום שלך').openPopup();
+    map.setView(latlng, 16);
+  }, () => toast('לא ניתן לקבל מיקום'));
+}
+
+// ═══════════════════════════════════════════════════════
+//  GRID (simple lat/lng lines)
+// ═══════════════════════════════════════════════════════
+let gridLayer = null;
+function toggleGrid(show) {
+  if (!show) { if (gridLayer) { map.removeLayer(gridLayer); gridLayer = null; } return; }
+  const lines  = [];
+  for (let lat = 31.85; lat <= 31.96; lat += 0.02) {
+    lines.push(L.polyline([[lat, 34.90], [lat, 35.05]], { color: '#ffffff', weight: 0.4, opacity: 0.3, dashArray: '4 4' }));
+  }
+  for (let lng = 34.90; lng <= 35.05; lng += 0.02) {
+    lines.push(L.polyline([[31.85, lng], [31.96, lng]], { color: '#ffffff', weight: 0.4, opacity: 0.3, dashArray: '4 4' }));
+  }
+  gridLayer = L.layerGroup(lines).addTo(map);
+}
+
+function toggleScale(show) {
+  if (show) scaleControl.addTo(map);
+  else map.removeControl(scaleControl);
+}
+
+// ═══════════════════════════════════════════════════════
+//  EXPORT
+// ═══════════════════════════════════════════════════════
+function exportPOIsGeoJSON() {
+  if (pois.length === 0) { toast('אין נקודות לייצוא'); return; }
+  const geojson = {
+    type: 'FeatureCollection',
+    features: pois.map(poi => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [poi.lng, poi.lat] },
+      properties: { name: poi.name, category: poi.cat, description: poi.desc, link: poi.link, color: poi.color }
+    }))
+  };
+  downloadBlob(JSON.stringify(geojson, null, 2), 'neot-kdomim-poi.geojson', 'application/json');
+  toast('GeoJSON יוצא');
+}
+
+function exportPOIsCSV() {
+  if (pois.length === 0) { toast('אין נקודות לייצוא'); return; }
+  const rows = ['name,category,description,lat,lng,link'].concat(
+    pois.map(p => `"${p.name}","${getCatLabel(p.cat)}","${p.desc}","${p.lat}","${p.lng}","${p.link||''}"`)
+  );
+  downloadBlob(rows.join('\n'), 'neot-kdomim-poi.csv', 'text/csv;charset=utf-8');
+  toast('CSV יוצא');
+}
+
+function downloadBlob(content, filename, mime) {
+  const blob = new Blob(['﻿' + content], { type: mime });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function printMap() { window.print(); }
+
+// ═══════════════════════════════════════════════════════
+//  LOCAL STORAGE
+// ═══════════════════════════════════════════════════════
+function saveToLocalStorage() {
+  localStorage.setItem('neot_pois', JSON.stringify(pois));
+  toast('נשמר בדפדפן (' + pois.length + ' נקודות)');
+}
+
+function loadFromLocalStorage() {
+  const saved = localStorage.getItem('neot_pois');
+  if (!saved) return;
+  try {
+    const arr = JSON.parse(saved);
+    arr.forEach(poi => {
+      poiIdCounter = Math.max(poiIdCounter, poi.id);
+      pois.push(poi);
+      const marker = L.marker([poi.lat, poi.lng], { icon: createPOIIcon(poi.cat, poi.color) })
+        .addTo(map).bindPopup(buildPopupHtml(poi));
+      marker.on('click', () => marker.openPopup());
+      poiMarkers[poi.id] = marker;
+    });
+    renderPOIList();
+    renderCatPills();
+    if (arr.length) toast('נטענו ' + arr.length + ' נקודות שמורות');
+  } catch(e) {}
+}
+
+function clearLocalStorage() {
+  if (confirm('למחוק את כל הנקודות השמורות?')) {
+    localStorage.removeItem('neot_pois');
+    toast('השמירה נמחקה');
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════════════════
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 6000);
+}
+
+// ═══════════════════════════════════════════════════════
+//  ITM PROJECTION (Israel Transverse Mercator EPSG:2039)
+// ═══════════════════════════════════════════════════════
+function setupProj4() {
+  if (typeof proj4 === 'undefined') return;
+  proj4.defs('EPSG:2039',
+    '+proj=tmerc +lat_0=31.7343936111111 +lon_0=35.2045169444444 ' +
+    '+k=1.0000067 +x_0=219529.584 +y_0=626907.39 +ellps=GRS80 ' +
+    '+towgs84=-24.0024,17.1032,-17.8444,-0.33077,-1.85269,1.66969,5.4248 ' +
+    '+units=m +no_defs');
+}
+
+// ═══════════════════════════════════════════════════════
+//  SHP IMPORT (shpjs – ZIP containing .shp/.dbf/.prj)
+// ═══════════════════════════════════════════════════════
+// המרת GeoJSON מ-ITM ל-WGS84 אם הקואורדינטות גדולות (סימן ל-ITM)
+function reprojectGeoJSON(fc) {
+  if (typeof proj4 === 'undefined') return fc;
+  const reprojectCoord = (coord) => {
+    if (!Array.isArray(coord) || coord.length < 2) return coord;
+    if (typeof coord[0] === 'number' && Math.abs(coord[0]) > 1000) {
+      try { const r = proj4('EPSG:2039','EPSG:4326',[coord[0],coord[1]]); return [r[0],r[1]]; } catch(_){}
+    }
+    return coord;
+  };
+  const reprojectGeom = (geom) => {
+    if (!geom) return geom;
+    const walk = (c) => {
+      if (!Array.isArray(c)) return c;
+      if (typeof c[0] === 'number') return reprojectCoord(c);
+      return c.map(walk);
+    };
+    return { ...geom, coordinates: walk(geom.coordinates) };
+  };
+  return { ...fc, features: (fc.features||[]).map(f => ({ ...f, geometry: reprojectGeom(f.geometry) })) };
+}
+
+async function importSHP(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (typeof shp === 'undefined') { toast('ספריית shpjs לא נטענה, בדוק חיבור אינטרנט'); return; }
+  toast('טוען Shapefile...');
+  try {
+    const buffer  = await file.arrayBuffer();
+    const geojson = await shp(buffer);
+    const collections = (Array.isArray(geojson) ? geojson : [geojson]).map(reprojectGeoJSON);
+    let total = 0;
+    collections.forEach((fc, idx) => {
+      const color = LAYER_COLORS[layerColorIdx % LAYER_COLORS.length];
+      const layer = L.geoJSON(fc, {
+        style: () => ({ color, weight: 2, fillColor: color, fillOpacity: 0.15 }),
+        onEachFeature: (feature, lyr) => {
+          if (feature.properties) {
+            const rows = Object.entries(feature.properties)
+              .filter(([, v]) => v !== null && v !== undefined)
+              .map(([k, v]) => `<b>${k}:</b> ${v}`).join('<br/>');
+            if (rows) lyr.bindPopup(`<div dir="auto" style="max-width:280px;font-size:0.8rem">${rows}</div>`);
+          }
+        },
+        pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
+          radius: 7, fillColor: LAYER_COLORS[layerColorIdx % LAYER_COLORS.length],
+          color: '#fff', weight: 1.5, fillOpacity: 0.9
+        })
+      });
+      const name = file.name.replace(/\.zip$/i, '') + (collections.length > 1 ? ` (${idx + 1})` : '');
+      addImportedLayer(layer, name);
+      total += fc.features ? fc.features.length : 0;
+    });
+    toast(`SHP נטען: ${total} אובייקטים`);
+  } catch (err) {
+    toast('שגיאה ב-Shapefile: ' + err.message);
+  }
+  input.value = '';
+}
+
+// ═══════════════════════════════════════════════════════
+//  DXF / DWG IMPORT
+// ═══════════════════════════════════════════════════════
+function importDXF(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const crsMode = document.getElementById('dwg-crs').value;
+  const reader  = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    // Binary DWG check – DWG files start with "AC10" / "AC10xx" magic
+    if (/^AC10/i.test(text.substring(0, 6)) || text.indexOf('SECTION') === -1) {
+      toast('קובץ DWG אינו נתמך. יש לשמור כ-DXF: File → Save As → AutoCAD 2013 DXF (או 2010 DXF)');
+      return;
+    }
+    try {
+      const features = parseDXFToGeoJSON(text, crsMode);
+      if (features.length === 0) { toast('לא נמצאו אובייקטים גיאומטריים ב-DXF'); return; }
+      const color = LAYER_COLORS[layerColorIdx % LAYER_COLORS.length];
+      const layer = L.geoJSON({ type: 'FeatureCollection', features }, {
+        style: () => ({ color, weight: 1.8, fillColor: color, fillOpacity: 0.12 }),
+        onEachFeature: (feat, lyr) => {
+          const p = feat.properties || {};
+          lyr.bindPopup(`<div style="font-size:0.8rem"><b>סוג:</b> ${p.type || ''}<br/><b>שכבה:</b> ${p.layer || '0'}</div>`);
+        },
+        pointToLayer: (f, ll) => L.circleMarker(ll, {
+          radius: 6, fillColor: color, color: '#fff', weight: 1.5, fillOpacity: 0.9
+        })
+      });
+      addImportedLayer(layer, file.name);
+      toast(`DXF נטען: ${features.length} אובייקטים`);
+    } catch (err) {
+      toast('שגיאה ב-DXF: ' + err.message);
+    }
+  };
+  reader.readAsText(file, 'utf-8');
+  input.value = '';
+}
+
+function parseDXFToGeoJSON(text, crsMode) {
+  const features = [];
+  const lines    = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+
+  // Build group-code / value pairs
+  const P = [];
+  for (let i = 0; i + 1 < lines.length; i += 2) {
+    const c = parseInt(lines[i].trim(), 10);
+    if (!isNaN(c)) P.push([c, lines[i + 1].trim()]);
+  }
+
+  // Locate ENTITIES section
+  let entStart = -1, entEnd = -1, depth = 0;
+  for (let i = 0; i < P.length; i++) {
+    const [c, v] = P[i];
+    if (c === 0 && v === 'SECTION') depth++;
+    if (c === 2 && v === 'ENTITIES' && depth > 0 && entStart < 0) entStart = i + 1;
+    if (c === 0 && v === 'ENDSEC'   && entStart >= 0 && entEnd < 0) entEnd = i;
+  }
+  if (entStart < 0) return features;
+  if (entEnd   < 0) entEnd = P.length;
+
+  // Detect coordinate system automatically
+  let useITM = crsMode === 'itm';
+  if (crsMode === 'auto') {
+    for (let i = entStart; i < entEnd; i++) {
+      if (P[i][0] === 10) { useITM = Math.abs(parseFloat(P[i][1])) > 1000; break; }
+    }
+  }
+
+  const toCoord = (x, y) => {
+    if (useITM && typeof proj4 !== 'undefined') {
+      try { return proj4('EPSG:2039', 'EPSG:4326', [x, y]); } catch (_) {}
+    }
+    return [x, y]; // [lng, lat]
+  };
+
+  // Walk entities
+  let etype = null, props = {}, lwV = [], polyV = [], inVtx = false, vx = null;
+
+  const flush = () => {
+    if (!etype) return;
+    const f = buildDXFFeat(etype, props, lwV.length ? lwV : polyV, toCoord);
+    if (f) features.push(f);
+    etype = null; props = {}; lwV = []; polyV = []; inVtx = false; vx = null;
+  };
+
+  for (let i = entStart; i < entEnd; i++) {
+    const [c, v] = P[i];
+
+    if (c === 0) {
+      if (v === 'VERTEX' || v === 'ATTRIB') { inVtx = true; vx = null; continue; }
+      if (v === 'SEQEND') { inVtx = false; flush(); continue; }
+      if (inVtx) { inVtx = false; }
+      flush();
+      etype = v;
+      props = { type: v, layer: '0' };
+      continue;
+    }
+
+    if (!etype) continue;
+
+    // Collect POLYLINE vertices
+    if (inVtx) {
+      if (c === 10) { vx = parseFloat(v); }
+      if (c === 20 && vx !== null) { polyV.push([vx, parseFloat(v)]); vx = null; }
+      continue;
+    }
+
+    // LWPOLYLINE repeated vertices
+    if (etype === 'LWPOLYLINE') {
+      if (c === 10) { lwV.push([parseFloat(v), null]); continue; }
+      if (c === 20 && lwV.length > 0) { lwV[lwV.length - 1][1] = parseFloat(v); continue; }
+    }
+
+    if (c === 8)  props.layer = v;
+    if (c === 1)  props.text  = v;
+    if (c === 70) props.flags = parseInt(v, 10);
+    if (c === 10) props.x     = parseFloat(v);
+    if (c === 20) props.y     = parseFloat(v);
+    if (c === 11) props.x2    = parseFloat(v);
+    if (c === 21) props.y2    = parseFloat(v);
+    if (c === 40) props.r     = parseFloat(v);
+    if (c === 50) props.a1    = parseFloat(v);
+    if (c === 51) props.a2    = parseFloat(v);
+  }
+  flush();
+  return features;
+}
+
+function buildDXFFeat(etype, props, verts, toCoord) {
+  const p = { type: etype, layer: props.layer || '0' };
+  try {
+    switch (etype) {
+      case 'POINT': {
+        return { type: 'Feature', properties: p,
+          geometry: { type: 'Point', coordinates: toCoord(props.x, props.y) } };
+      }
+      case 'LINE': {
+        return { type: 'Feature', properties: p,
+          geometry: { type: 'LineString',
+            coordinates: [toCoord(props.x, props.y), toCoord(props.x2, props.y2)] } };
+      }
+      case 'LWPOLYLINE':
+      case 'POLYLINE':
+      case '3DPOLYLINE': {
+        const coords = verts.filter(v => v[1] !== null).map(v => toCoord(v[0], v[1]));
+        if (coords.length < 2) return null;
+        const closed = props.flags && (props.flags & 1);
+        if (closed) coords.push(coords[0]);
+        const isPolygon = closed && coords.length >= 4;
+        return { type: 'Feature', properties: p,
+          geometry: isPolygon
+            ? { type: 'Polygon',    coordinates: [coords] }
+            : { type: 'LineString', coordinates: coords } };
+      }
+      case 'CIRCLE': {
+        const { x: cx, y: cy, r = 1 } = props;
+        const pts = [];
+        for (let a = 0; a <= 360; a += 8) {
+          const rad = a * Math.PI / 180;
+          pts.push(toCoord(cx + r * Math.cos(rad), cy + r * Math.sin(rad)));
+        }
+        return { type: 'Feature', properties: p,
+          geometry: { type: 'Polygon', coordinates: [pts] } };
+      }
+      case 'ARC': {
+        const { x: cx, y: cy, r = 1, a1 = 0 } = props;
+        let a2 = props.a2 ?? 360;
+        if (a2 < a1) a2 += 360;
+        const pts = [];
+        for (let a = a1; a <= a2; a += 4)
+          pts.push(toCoord(cx + r * Math.cos(a * Math.PI / 180), cy + r * Math.sin(a * Math.PI / 180)));
+        return { type: 'Feature', properties: p,
+          geometry: { type: 'LineString', coordinates: pts } };
+      }
+      case 'TEXT':
+      case 'MTEXT':
+        if (props.x == null) return null;
+        return { type: 'Feature', properties: { ...p, text: props.text || '' },
+          geometry: { type: 'Point', coordinates: toCoord(props.x, props.y) } };
+      default: return null;
+    }
+  } catch (_) { return null; }
+}
+
+// ═══════════════════════════════════════════════════════
+//  LYR / LYRX IMPORT (ArcGIS Layer File)
+// ═══════════════════════════════════════════════════════
+function importLYR(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  if (file.name.toLowerCase().endsWith('.lyrx') || file.name.toLowerCase().endsWith('.json')) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const data = JSON.parse(e.target.result);
+        parseLYRX(data, file.name);
+      } catch (err) {
+        toast('שגיאה בקריאת LYRX: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  } else {
+    // Binary .lyr – try reading as text (some are XML-like); if not, show guidance
+    const reader = new FileReader();
+    reader.onload = e => {
+      const text = e.target.result;
+      if (text.trimStart().startsWith('{') || text.trimStart().startsWith('<')) {
+        // Might be JSON or XML LYRX
+        try { parseLYRX(JSON.parse(text), file.name); return; } catch (_) {}
+        toast('קובץ LYR פורמט לא מזוהה. נסה לשמור כ-.lyrx מ-ArcGIS Pro.');
+      } else {
+        toast('קובץ .lyr בינארי (ArcMap) אינו נתמך בדפדפן. ' +
+              'ב-ArcGIS Pro: לחץ ימני על השכבה → Save As Layer File → שמור כ-.lyrx');
+      }
+    };
+    reader.readAsText(file);
+  }
+  input.value = '';
+}
+
+function parseLYRX(data, filename) {
+  const defs = data.layerDefinitions || data.layers || [];
+  if (defs.length === 0) { toast('לא נמצאו הגדרות שכבה ב-LYRX'); return; }
+
+  const rows = defs.map((def, i) => {
+    const name  = def.name || def.uRI || `שכבה ${i + 1}`;
+    const kind  = (def.type || '').replace('CIM', '').replace('Layer', '');
+    let src = '';
+    const dc  = def.featureTable && def.featureTable.dataConnection;
+    if (dc) src = dc.workspaceConnectionString || dc.dataset || dc.featureDataset || '';
+    const renderer = def.renderer ? (def.renderer.type || '').replace('CIM','').replace('Renderer','') : '';
+    return `<div style="margin-bottom:6px;padding:6px;background:#1a2f4a;border-radius:4px;font-size:0.78rem">
+      <b>${i + 1}. ${name}</b><br/>
+      ${kind ? `<span style="color:#8899aa">סוג: ${kind}</span><br/>` : ''}
+      ${src  ? `<span style="color:#8899aa">מקור: ${src}</span><br/>` : ''}
+      ${renderer ? `<span style="color:#8899aa">עיצוב: ${renderer}</span>` : ''}
+    </div>`;
+  });
+
+  const popup = `
+    <div style="font-size:0.8rem;direction:rtl;max-width:320px">
+      <b style="color:#4fc3f7">📋 ${filename}</b>
+      <p style="font-size:0.72rem;color:#aaa;margin:4px 0 8px">קובץ LYRX מכיל הגדרות עיצוב. לגיאומטריה – ייצא כ-GeoJSON מ-ArcGIS.</p>
+      ${rows.join('')}
+    </div>`;
+
+  const marker = L.marker(NEOT_CENTER, {
+    icon: L.divIcon({
+      className: '',
+      html: `<div style="background:#a29bfe;border:2px solid rgba(0,0,0,0.4);border-radius:50% 50% 50% 0;
+             transform:rotate(-45deg);width:28px;height:28px;display:flex;align-items:center;
+             justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.5)">
+             <span style="transform:rotate(45deg);font-size:13px">📋</span></div>`,
+      iconSize: [28, 28], iconAnchor: [14, 28], popupAnchor: [0, -30]
+    })
+  }).bindPopup(popup, { maxWidth: 340 });
+
+  const group = L.layerGroup([marker]);
+  addImportedLayer(group, 'LYRX: ' + filename);
+  marker.addTo(map).openPopup();
+  toast(`LYRX נטען: ${defs.length} שכבות`);
+}
+
+// ═══════════════════════════════════════════════════════
+//  GEOTIFF / ECW RASTER IMPORT
+// ═══════════════════════════════════════════════════════
+let activeRasterLayer = null;
+
+async function importGeoTIFF(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+
+  const status = document.getElementById('raster-status');
+  status.style.display = 'block';
+  status.textContent = '⏳ טוען קובץ רסטר... (קבצים גדולים עשויים לקחת זמן)';
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const georaster = await parseGeoraster(arrayBuffer);
+
+    // הסר שכבה קיימת
+    if (activeRasterLayer) {
+      map.removeLayer(activeRasterLayer);
+      activeRasterLayer = null;
+    }
+
+    const opacity = document.getElementById('raster-opacity').value / 100;
+
+    activeRasterLayer = new GeoRasterLayer({
+      georaster,
+      opacity,
+      resolution: 256,
+      pixelValuesToColorFn: values => {
+        // RGB — 3 ערוצים
+        if (values.length >= 3) {
+          const [r, g, b] = values;
+          if (r === null || g === null || b === null) return null;
+          return `rgba(${r},${g},${b},1)`;
+        }
+        // גווני אפור — ערוץ יחיד
+        const v = values[0];
+        if (v === null) return null;
+        const n = Math.round(v);
+        return `rgba(${n},${n},${n},1)`;
+      }
+    });
+
+    activeRasterLayer.addTo(map);
+
+    // זום לשכבה
+    try {
+      const bounds = activeRasterLayer.getBounds();
+      if (bounds.isValid()) map.fitBounds(bounds, { padding: [20, 20] });
+    } catch (_) {}
+
+    // הוסף לרשימת שכבות
+    addImportedLayer(activeRasterLayer, '🛰️ ' + file.name);
+
+    const size = (file.size / (1024 * 1024)).toFixed(1);
+    status.textContent = `✅ נטען: ${file.name} (${size} MB)`;
+    status.style.color = '#52b788';
+    toast('רסטר נטען: ' + file.name);
+
+  } catch (err) {
+    status.textContent = '❌ שגיאה: ' + err.message;
+    status.style.color = '#ff6b6b';
+    console.error('GeoTIFF error:', err);
+    toast('שגיאה בטעינת רסטר: ' + err.message);
+  }
+}
+
+function setRasterOpacity(val) {
+  document.getElementById('raster-opacity-val').textContent = val + '%';
+  if (activeRasterLayer && activeRasterLayer.setOpacity) {
+    activeRasterLayer.setOpacity(val / 100);
+  }
+}
+
+function removeRasterLayer() {
+  if (!activeRasterLayer) { toast('אין שכבת רסטר פעילה'); return; }
+  map.removeLayer(activeRasterLayer);
+  activeRasterLayer = null;
+  document.getElementById('raster-status').style.display = 'none';
+  renderLayerList();
+  toast('שכבת רסטר הוסרה');
+}
+
+// ═══════════════════════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════
+//  AUTH SYSTEM
+// ═══════════════════════════════════════════════════════
+const AUTHORIZED_USERS = [
+  { email: 'Ayalaeilot@gmail.com', password: 'NK12345', name: 'אילה אורן', role: 'admin' },
+  // הוסף משתמשים נוספים כאן:
+  // { email: 'user@n-k.org.il', password: 'password', name: 'שם', role: 'admin' },
+];
+const SESSION_KEY = 'nk_session';
+let currentUser = null;
+
+function authInit() {
+  try {
+    const s = sessionStorage.getItem(SESSION_KEY);
+    if (s) { currentUser = JSON.parse(s); renderAuthBar(); return; }
+  } catch(e) {}
+  openLoginModal();
+}
+
+function openLoginModal() {
+  document.getElementById('login-email').value = '';
+  document.getElementById('login-pass').value  = '';
+  document.getElementById('login-err').classList.remove('show');
+  document.getElementById('login-err').style.display = 'none';
+  document.getElementById('login-overlay').classList.add('open');
+}
+
+function closeLoginModal() {
+  document.getElementById('login-overlay').classList.remove('open');
+}
+
+function submitLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass  = document.getElementById('login-pass').value;
+  const err   = document.getElementById('login-err');
+  const user  = AUTHORIZED_USERS.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === pass);
+  if (!user) {
+    err.textContent = 'מייל או סיסמה שגויים';
+    err.style.display = 'block';
+    document.getElementById('login-pass').value = '';
+    return;
+  }
+  currentUser = { email: user.email, name: user.name, role: user.role };
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(currentUser));
+  closeLoginModal();
+  renderAuthBar();
+  renderReportList();
+  toast('ברוך הבא, ' + user.name + ' ✓');
+}
+
+function continueAsGuest() {
+  currentUser = null;
+  closeLoginModal();
+  renderAuthBar();
+  renderReportList();
+}
+
+function authLogout() {
+  currentUser = null;
+  sessionStorage.removeItem(SESSION_KEY);
+  renderAuthBar();
+  renderReportList();
+  toast('התנתקת');
+  setTimeout(openLoginModal, 600);
+}
+
+function isAdmin()     { return currentUser?.role === 'admin'; }
+function getUserName() { return currentUser ? currentUser.name : 'אורח'; }
+
+function renderAuthBar() {
+  const nameEl   = document.getElementById('auth-name-label');
+  const badgeEl  = document.getElementById('auth-role-badge');
+  const actionEl = document.getElementById('auth-action-btn');
+  if (!nameEl) return;
+  if (currentUser) {
+    nameEl.textContent  = currentUser.name;
+    badgeEl.style.display = 'inline';
+    actionEl.textContent  = 'יציאה';
+    actionEl.className    = 'auth-btn auth-btn-logout';
+    actionEl.onclick      = authLogout;
+  } else {
+    nameEl.textContent    = 'אורח';
+    badgeEl.style.display = 'none';
+    actionEl.textContent  = 'כניסה';
+    actionEl.className    = 'auth-btn auth-btn-login';
+    actionEl.onclick      = openLoginModal;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  REPORT SYSTEM
+// ═══════════════════════════════════════════════════════
+const REPORT_KEY = 'neot_reports';
+let reports      = [];
+let reportIdCtr  = 0;
+let rPhotoB64    = null;
+let rLocation    = null;
+
+function loadReports() {
+  try {
+    const s = localStorage.getItem(REPORT_KEY);
+    if (s) {
+      reports     = JSON.parse(s);
+      reportIdCtr = reports.reduce((m, r) => Math.max(m, r.id), 0);
+    }
+  } catch(e) {}
+  renderReportList();
+  reports.forEach(r => { if (r.location) addReportMarker(r); });
+}
+
+function saveReportsData() { localStorage.setItem(REPORT_KEY, JSON.stringify(reports)); }
+
+function openReportForm() {
+  document.getElementById('r-reporter').value = currentUser ? currentUser.name : '';
+  document.getElementById('r-phone').value    = '';
+  document.getElementById('r-detail').value   = '';
+  rClearPhoto();
+  rLocation = null;
+
+  document.getElementById('r-loc-label').textContent = 'מאתר מיקום GPS...';
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        rLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: Math.round(pos.coords.accuracy) };
+        document.getElementById('r-loc-label').textContent =
+          `${rLocation.lat.toFixed(5)}, ${rLocation.lng.toFixed(5)}  (דיוק: ${rLocation.acc} מ')`;
+      },
+      () => { document.getElementById('r-loc-label').textContent = 'לא ניתן לאתר מיקום'; },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  } else {
+    document.getElementById('r-loc-label').textContent = 'GPS לא נתמך';
+  }
+
+  document.getElementById('report-overlay').classList.add('open');
+}
+
+function closeReportForm() { document.getElementById('report-overlay').classList.remove('open'); }
+
+function rPreviewPhoto(input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    rPhotoB64 = e.target.result;
+    document.getElementById('rphoto-preview').src = rPhotoB64;
+    document.getElementById('rphoto-preview-wrap').style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+
+function rClearPhoto() {
+  rPhotoB64 = null;
+  document.getElementById('rphoto-preview').src = '';
+  document.getElementById('rphoto-preview-wrap').style.display = 'none';
+  document.getElementById('r-photo').value = '';
+}
+
+function submitReport() {
+  const reporter = document.getElementById('r-reporter').value.trim();
+  const detail   = document.getElementById('r-detail').value.trim();
+  if (!reporter) { toast('יש להזין פרטי מדווח'); return; }
+  if (!detail)   { toast('יש למלא פירוט הבעיה'); return; }
+
+  const now = new Date();
+  const report = {
+    id:          ++reportIdCtr,
+    reporter:    reporter,
+    submittedBy: getUserName(),
+    phone:       document.getElementById('r-phone').value.trim(),
+    detail:      detail,
+    photo:       rPhotoB64 || null,
+    location:    rLocation,
+    status:      'new',
+    timestamp:   now.toISOString(),
+    timestampHe: now.toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }),
+    statusHistory: [{ status: 'new', time: now.toISOString() }]
+  };
+
+  reports.unshift(report);
+  saveReportsData();
+  addReportMarker(report);
+  renderReportList();
+  closeReportForm();
+  toast('הדיווח נשמר ✓');
+}
+
+function addReportMarker(report) {
+  if (!report.location) return;
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="background:#ffa94d;border:2px solid rgba(0,0,0,0.35);border-radius:50% 50% 50% 0;
+           transform:rotate(-45deg);width:28px;height:28px;display:flex;align-items:center;
+           justify-content:center;box-shadow:0 3px 8px rgba(0,0,0,0.5)">
+           <span style="transform:rotate(45deg);font-size:13px">⚠️</span></div>`,
+    iconSize:[28,28], iconAnchor:[14,28], popupAnchor:[0,-30]
+  });
+  const statusLbls = { new:'חדש', inprogress:'בטיפול', done:'טופל' };
+  L.marker([report.location.lat, report.location.lng], { icon })
+    .addTo(map)
+    .bindPopup(`<div style="direction:rtl;min-width:180px;font-family:Segoe UI,Arial">
+      <b>⚠️ בעיה מדווחת</b>
+      <div style="font-size:0.72rem;color:#aaa;margin:3px 0">${report.timestampHe}</div>
+      <div style="font-size:0.8rem;margin-bottom:4px">${report.detail}</div>
+      <div style="font-size:0.72rem;color:#8899aa">מדווח: ${report.reporter}</div>
+      <div style="font-size:0.75rem;margin-top:5px">סטטוס: <b>${statusLbls[report.status]||report.status}</b></div>
+    </div>`, { maxWidth: 240 });
+}
+
+function renderReportList() {
+  const el    = document.getElementById('report-list');
+  const count = document.getElementById('report-count');
+  if (!el) return;
+  count.textContent = reports.length;
+
+  if (reports.length === 0) {
+    el.innerHTML = '<div style="text-align:center;padding:20px;color:#8899aa;font-size:0.8rem;"><i class="fa-solid fa-triangle-exclamation" style="font-size:1.5rem;display:block;margin-bottom:8px;color:#2a4f7a"></i>אין דיווחים עדיין</div>';
+    return;
+  }
+
+  const statusLbl   = { new:'חדש', inprogress:'בטיפול', done:'טופל' };
+  const statusCls   = { new:'status-new', inprogress:'status-inprogress', done:'status-done' };
+
+  el.innerHTML = reports.map(r => {
+    const locStr   = r.location ? `📍 ${r.location.lat.toFixed(4)}, ${r.location.lng.toFixed(4)}` : '📍 מיקום לא זמין';
+    const photoHtml = r.photo ? `<img class="report-card-img" src="${r.photo}" onclick="rOpenLightbox(${r.id})" alt="תמונה" />` : '';
+    const adminBtns = isAdmin() ? `
+      <button class="rstat-btn rstat-inprogress" onclick="setReportStatus(${r.id},'inprogress')">בטיפול</button>
+      <button class="rstat-btn rstat-done"       onclick="setReportStatus(${r.id},'done')">טופל</button>
+      <button class="rstat-btn rstat-del"         onclick="deleteReport(${r.id})">מחק</button>` : '';
+    return `<div class="report-card" id="rcard-${r.id}">
+      <div class="report-card-hdr">
+        <div class="report-card-name">${r.reporter}${r.phone ? ' · ' + r.phone : ''}</div>
+        <span class="report-status ${statusCls[r.status]||'status-new'}">${statusLbl[r.status]||r.status}</span>
+      </div>
+      <div class="report-card-time"><i class="fa-regular fa-clock"></i> ${r.timestampHe} &nbsp;|&nbsp; <i class="fa-solid fa-user"></i> ${r.submittedBy||r.reporter}</div>
+      <div class="report-card-detail">${r.detail}</div>
+      <div class="report-card-loc">${locStr}</div>
+      ${photoHtml}
+      <div class="report-admin-btns">${adminBtns}</div>
+    </div>`;
+  }).join('');
+}
+
+function setReportStatus(id, status) {
+  const r = reports.find(r => r.id === id); if (!r) return;
+  r.status = status;
+  r.statusHistory.push({ status, time: new Date().toISOString() });
+  saveReportsData();
+  renderReportList();
+  toast(status === 'inprogress' ? 'סטטוס: בטיפול' : 'סטטוס: טופל');
+}
+
+function deleteReport(id) {
+  reports = reports.filter(r => r.id !== id);
+  saveReportsData();
+  renderReportList();
+  toast('דיווח נמחק');
+}
+
+function exportReports() {
+  if (!reports.length) { toast('אין דיווחים לייצוא'); return; }
+  const gj = {
+    type: 'FeatureCollection',
+    exported: new Date().toISOString(),
+    features: reports.map(r => ({
+      type: 'Feature',
+      geometry: r.location ? { type:'Point', coordinates:[r.location.lng, r.location.lat] } : null,
+      properties: { id:r.id, reporter:r.reporter, phone:r.phone, detail:r.detail,
+                    status:r.status, timestamp:r.timestamp, timestampHe:r.timestampHe,
+                    hasPhoto:!!r.photo, accuracy_m: r.location?.acc||null }
+    }))
+  };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(gj,null,2)], {type:'application/json'}));
+  a.download = 'neot-kadumim-reports-' + new Date().toISOString().slice(0,10) + '.geojson';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('קובץ GeoJSON הורד');
+}
+
+function rOpenLightbox(id) {
+  const r = reports.find(r => r.id === id); if (!r || !r.photo) return;
+  document.getElementById('r-lightbox-img').src = r.photo;
+  document.getElementById('r-lightbox').classList.add('open');
+}
+function rCloseLightbox() { document.getElementById('r-lightbox').classList.remove('open'); }
+
+
+window.addEventListener('load', () => {
+  if (map) { map.invalidateSize(); }
+});
+
+window.addEventListener('DOMContentLoaded', () => {
+  try {
+    setupProj4();
+    initMap();
+    authInit();
+    loadReports();
+  } catch(err) {
+    document.getElementById('map').style.background = '#1a1a2e';
+    document.getElementById('map').innerHTML =
+      `<div style="color:#ff6b6b;font-size:1rem;padding:30px;font-family:monospace;direction:ltr;background:#0d1b2a;position:absolute;inset:0;overflow:auto;">
+        <b>JavaScript Error:</b><br/><br/>${err.stack || err.message}
+      </div>`;
+    console.error('Init error:', err);
+  }
+});
+</script>
+
+<!-- Print style -->
+<style>
+@media print {
+  #sidebar, #map-toolbar, #coords-bar, #toggle-sidebar { display: none !important; }
+  #map-wrap { width: 100vw; height: 100vh; }
+}
+</style>
+</body>
+</html>

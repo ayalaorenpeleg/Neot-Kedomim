@@ -1,0 +1,1927 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <title>נקודות עניין – נאות קדומים</title>
+
+  <!-- ספריות מקומיות – אין תלות ב-CDN -->
+  <link rel="stylesheet" href="lib/leaflet.css" />
+  <script src="lib/leaflet.js"></script>
+  <script src="lib/shp.js"></script>
+  <script src="lib/proj4.js"></script>
+  <link rel="stylesheet" href="lib/font-awesome.min.css" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Arial, sans-serif; background: #0d1b2a; direction: rtl; }
+
+    /* ── Header ─────────────────────────────────────── */
+    #header {
+      position: fixed;
+      top: 0; right: 0; left: 0;
+      height: 56px;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      z-index: 1000;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    #header img { height: 44px; width: auto; }
+    #header-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #7b1230;
+      text-align: center;
+      flex: 1;
+      padding: 0 8px;
+    }
+    #menu-btn {
+      width: 40px; height: 40px;
+      background: #0f3460;
+      border: none;
+      border-radius: 8px;
+      color: #4fc3f7;
+      font-size: 1.1rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    /* ── Map ─────────────────────────────────────────── */
+    #map {
+      position: fixed;
+      top: 56px; bottom: 64px; right: 0; left: 0;
+    }
+
+    /* ── Pin-mode banner ─────────────────────────────── */
+    #pin-banner {
+      display: none;
+      position: fixed;
+      top: 64px; right: 12px; left: 12px;
+      background: #0f3460;
+      border: 1px solid #4fc3f7;
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: #4fc3f7;
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-align: center;
+      z-index: 900;
+      box-shadow: 0 3px 12px rgba(0,0,0,0.4);
+    }
+    #pin-banner.active { display: block; }
+
+    /* ── Bottom toolbar ──────────────────────────────── */
+    #bottom-bar {
+      position: fixed;
+      bottom: 0; right: 0; left: 0;
+      height: 64px;
+      background: #16213e;
+      border-top: 1px solid #0f3460;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      z-index: 1000;
+      padding: 0 8px;
+    }
+    .bar-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      background: none; border: none;
+      color: #8899aa; cursor: pointer;
+      font-size: 0.62rem; padding: 6px 12px; border-radius: 8px;
+      transition: color 0.2s, background 0.2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .bar-btn i { font-size: 1.2rem; }
+    .bar-btn:active, .bar-btn.active { color: #4fc3f7; background: rgba(79,195,247,0.1); }
+
+    /* ── FAB ─────────────────────────────────────────── */
+    #fab {
+      width: 56px; height: 56px;
+      background: linear-gradient(135deg, #0f3460, #533483);
+      border: 2px solid #4fc3f7;
+      border-radius: 50%;
+      color: #4fc3f7;
+      font-size: 1.5rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+      transition: transform 0.2s, background 0.2s;
+      margin-bottom: 2px;
+      -webkit-tap-highlight-color: transparent;
+      flex-shrink: 0;
+    }
+    #fab.active { background: linear-gradient(135deg, #3d0000, #7b1230); border-color: #ff6b6b; color: #ff6b6b; transform: rotate(45deg); }
+    #fab:active { transform: scale(0.93); }
+    #fab.active:active { transform: rotate(45deg) scale(0.93); }
+
+    /* ── Bottom Sheet ────────────────────────────────── */
+    #sheet-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 1100;
+    }
+    #sheet-overlay.open { display: block; }
+
+    #bottom-sheet {
+      position: fixed;
+      bottom: 0; right: 0; left: 0;
+      background: #16213e;
+      border-radius: 18px 18px 0 0;
+      border-top: 2px solid #0f3460;
+      z-index: 1200;
+      transform: translateY(100%);
+      transition: transform 0.35s cubic-bezier(0.32,0.72,0,1);
+      max-height: 82vh;
+      display: flex; flex-direction: column;
+    }
+    #bottom-sheet.open { transform: translateY(0); }
+
+    #sheet-handle-bar {
+      width: 40px; height: 4px;
+      background: #2a4f7a;
+      border-radius: 2px;
+      margin: 10px auto 0;
+      flex-shrink: 0;
+    }
+    #sheet-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px 8px;
+      flex-shrink: 0;
+    }
+    #sheet-header h2 { font-size: 0.95rem; color: #4fc3f7; }
+    #sheet-close {
+      background: none; border: none; color: #8899aa;
+      font-size: 1.1rem; cursor: pointer; padding: 4px;
+    }
+
+    #sheet-tabs {
+      display: flex;
+      border-bottom: 1px solid #0f3460;
+      flex-shrink: 0;
+    }
+    .stab {
+      flex: 1; padding: 10px 4px;
+      background: none; border: none;
+      color: #8899aa; cursor: pointer;
+      font-size: 0.72rem;
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      transition: color 0.2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .stab i { font-size: 1rem; }
+    .stab.active { color: #4fc3f7; border-bottom: 2px solid #4fc3f7; }
+
+    .spanel { display: none; flex: 1; overflow-y: auto; padding: 12px; }
+    .spanel.active { display: block; }
+
+    /* ── Sheet cards ─────────────────────────────────── */
+    .s-card {
+      background: #0d1b2a;
+      border: 1px solid #1e3a5f;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    .s-card-title {
+      font-size: 0.78rem; font-weight: 600;
+      color: #4fc3f7; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 6px;
+    }
+
+    /* ── Basemap grid ────────────────────────────────── */
+    .bm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .bm-card {
+      padding: 12px 8px;
+      background: #1a2f4a;
+      border: 2px solid #2a4f7a;
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: center;
+      font-size: 0.72rem; color: #aac4de;
+      transition: border-color 0.2s, color 0.2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .bm-card i { display: block; font-size: 1.4rem; margin-bottom: 4px; }
+    .bm-card.active { border-color: #4fc3f7; color: #4fc3f7; }
+
+    /* ── Layer item ──────────────────────────────────── */
+    .m-layer {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 10px;
+      background: #1a2f4a;
+      border: 1px solid #2a4f7a;
+      border-radius: 8px;
+      margin-bottom: 7px;
+      font-size: 0.8rem; color: #e0e0e0;
+    }
+    .m-layer-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .m-layer-name { flex: 1; }
+    .m-toggle { background: none; border: none; color: #aac4de; font-size: 1rem; cursor: pointer; padding: 4px; }
+    .m-toggle.off { color: #444; }
+
+    /* ── POI list ────────────────────────────────────── */
+    .poi-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px;
+      background: #1a2f4a;
+      border: 1px solid #2a4f7a;
+      border-radius: 8px;
+      margin-bottom: 7px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .poi-row:active { background: #1e3a5f; }
+    .poi-row-icon { font-size: 1.2rem; flex-shrink: 0; }
+    .poi-row-info { flex: 1; min-width: 0; }
+    .poi-row-name { font-size: 0.82rem; font-weight: 600; color: #e0e0e0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .poi-row-cat  { font-size: 0.7rem; color: #8899aa; }
+    .poi-del { background: none; border: none; color: #555; font-size: 0.9rem; cursor: pointer; padding: 4px; }
+    .poi-del:active { color: #ff6b6b; }
+
+    /* ── Modal (add/edit POI) ────────────────────────── */
+    #poi-modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.55);
+      z-index: 2000;
+      align-items: flex-end;
+    }
+    #poi-modal-overlay.open { display: flex; }
+
+    #poi-modal {
+      width: 100%;
+      background: #16213e;
+      border-radius: 18px 18px 0 0;
+      border-top: 2px solid #0f3460;
+      padding: 0 0 env(safe-area-inset-bottom, 16px);
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(0.32,0.72,0,1);
+    }
+    #poi-modal.open { transform: translateY(0); }
+
+    #pm-handle { width: 40px; height: 4px; background: #2a4f7a; border-radius: 2px; margin: 10px auto 0; }
+    #pm-header { padding: 12px 16px 0; display: flex; align-items: center; justify-content: space-between; }
+    #pm-header h3 { font-size: 0.95rem; color: #4fc3f7; }
+    #pm-close { background: none; border: none; color: #8899aa; font-size: 1.1rem; cursor: pointer; }
+
+    #pm-body { padding: 12px 16px; overflow-y: auto; max-height: 60vh; }
+    .pm-label { font-size: 0.75rem; color: #aac4de; display: block; margin-bottom: 3px; }
+    .pm-input {
+      width: 100%; background: #0d1b2a;
+      border: 1px solid #2a4f7a; border-radius: 8px;
+      color: #e0e0e0; padding: 10px 12px;
+      font-size: 0.88rem; margin-bottom: 10px;
+      outline: none; font-family: inherit; direction: rtl;
+    }
+    .pm-input:focus { border-color: #4fc3f7; }
+    textarea.pm-input { resize: none; min-height: 72px; }
+
+    /* Category selector */
+    #cat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .cat-tile {
+      padding: 8px 4px;
+      background: #0d1b2a;
+      border: 2px solid #2a4f7a;
+      border-radius: 8px;
+      text-align: center;
+      cursor: pointer;
+      font-size: 0.65rem; color: #aac4de;
+      transition: border-color 0.15s, color 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .cat-tile span { display: block; font-size: 1.3rem; margin-bottom: 2px; }
+    .cat-tile.active { border-color: #4fc3f7; color: #4fc3f7; }
+
+    /* Color dots */
+    #color-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    .cdot {
+      width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
+      border: 3px solid transparent;
+      transition: transform 0.15s, border-color 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .cdot.active { border-color: #4fc3f7; transform: scale(1.15); }
+
+    #pm-footer {
+      display: flex; gap: 10px;
+      padding: 0 16px 16px;
+    }
+    .pm-btn {
+      flex: 1; padding: 13px;
+      border: none; border-radius: 10px;
+      font-size: 0.88rem; font-weight: 700;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .pm-btn-cancel { background: #1a2f4a; color: #8899aa; border: 1px solid #2a4f7a; }
+    .pm-btn-save   { background: #1b4332; color: #52b788; border: 1px solid #52b788; }
+
+    /* ── Coords ──────────────────────────────────────── */
+    #coords-pill {
+      position: fixed;
+      bottom: 72px; left: 50%; transform: translateX(-50%);
+      background: rgba(13,27,42,0.85);
+      border: 1px solid #1e3a5f;
+      border-radius: 20px;
+      padding: 4px 14px;
+      font-size: 0.68rem; color: #8899aa;
+      z-index: 800;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    #coords-pill span { color: #4fc3f7; }
+
+    /* ── Zoom buttons ────────────────────────────────── */
+    .leaflet-control-zoom { display: none; } /* replaced by custom */
+    #zoom-btns {
+      position: fixed;
+      left: 12px; bottom: 80px;
+      display: flex; flex-direction: column; gap: 4px;
+      z-index: 800;
+    }
+    .z-btn {
+      width: 40px; height: 40px;
+      background: #16213e;
+      border: 1px solid #2a4f7a;
+      border-radius: 8px;
+      color: #e0e0e0; font-size: 1.2rem; font-weight: 700;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .z-btn:active { background: #0f3460; color: #4fc3f7; }
+
+    /* ── Locate btn ──────────────────────────────────── */
+    #locate-btn {
+      position: fixed;
+      left: 12px; bottom: 134px;
+      width: 40px; height: 40px;
+      background: #16213e;
+      border: 1px solid #2a4f7a;
+      border-radius: 8px;
+      color: #aac4de; font-size: 1rem;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+      z-index: 800;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #locate-btn:active { background: #0f3460; color: #4fc3f7; }
+
+    /* ── Toast ───────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      top: 68px; left: 50%; transform: translateX(-50%);
+      background: #0f3460; border: 1px solid #4fc3f7;
+      color: #e0e0e0; padding: 8px 20px;
+      border-radius: 20px; font-size: 0.8rem;
+      z-index: 3000; opacity: 0;
+      transition: opacity 0.3s; pointer-events: none;
+      white-space: nowrap;
+    }
+    #toast.show { opacity: 1; }
+
+    /* ── Empty state ─────────────────────────────────── */
+    .empty-state { text-align: center; padding: 30px 10px; color: #8899aa; font-size: 0.82rem; }
+    .empty-state i { font-size: 2rem; display: block; margin-bottom: 8px; color: #2a4f7a; }
+
+
+    /* ── Report / Survey ──────────────────────────── */
+    .report-status {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .status-new       { background: #3d2600; color: #ffa94d; border: 1px solid #ffa94d; }
+    .status-inprogress{ background: #0f3460; color: #4fc3f7; border: 1px solid #4fc3f7; }
+    .status-done      { background: #1b4332; color: #52b788; border: 1px solid #52b788; }
+
+    .report-card {
+      background: #0d1b2a;
+      border: 1px solid #1e3a5f;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    .report-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .report-card-name {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #e0e0e0;
+      flex: 1;
+    }
+    .report-card-time {
+      font-size: 0.68rem;
+      color: #8899aa;
+      margin-bottom: 5px;
+    }
+    .report-card-detail {
+      font-size: 0.78rem;
+      color: #aac4de;
+      margin-bottom: 8px;
+      line-height: 1.5;
+    }
+    .report-card-loc {
+      font-size: 0.68rem;
+      color: #8899aa;
+      margin-bottom: 8px;
+    }
+    .report-card-img {
+      width: 100%;
+      max-height: 180px;
+      object-fit: cover;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      cursor: pointer;
+    }
+    .report-status-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .status-btn {
+      padding: 4px 10px;
+      border-radius: 16px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      border: 1px solid;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .status-btn:active { opacity: 0.7; }
+    .status-btn-inprogress { background: #0f3460; color: #4fc3f7; border-color: #4fc3f7; }
+    .status-btn-done       { background: #1b4332; color: #52b788; border-color: #52b788; }
+    .status-btn-del        { background: #3d0000; color: #ff6b6b; border-color: #ff6b6b; }
+
+    /* Admin unlock */
+    #admin-unlock-row {
+      display: flex; gap: 8px; margin-bottom: 10px; align-items: center;
+    }
+    #admin-pin-input {
+      flex: 1;
+    }
+
+    /* Photo preview */
+    #photo-preview-wrap { margin-bottom: 10px; display: none; }
+    #photo-preview {
+      width: 100%; max-height: 200px; object-fit: cover;
+      border-radius: 8px; border: 1px solid #2a4f7a;
+    }
+    #photo-clear {
+      margin-top: 4px;
+      font-size: 0.72rem;
+      color: #ff6b6b;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    /* Image lightbox */
+    #lightbox {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.9);
+      z-index: 5000;
+      align-items: center;
+      justify-content: center;
+    }
+    #lightbox.open { display: flex; }
+    #lightbox img { max-width: 96vw; max-height: 96vh; border-radius: 8px; }
+    #lightbox-close {
+      position: absolute; top: 16px; left: 16px;
+      background: none; border: none;
+      color: #fff; font-size: 1.8rem; cursor: pointer;
+    }
+
+
+    /* ── Auth ─────────────────────────────────────────── */
+    #auth-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .auth-name {
+      font-size: 0.72rem;
+      color: #4a5568;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .auth-role {
+      font-size: 0.62rem;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-weight: 700;
+    }
+    .auth-role-admin { background: #0f3460; color: #4fc3f7; border: 1px solid #4fc3f7; }
+    .auth-role-guest { background: #2a2a2a; color: #8899aa; }
+    .auth-login-btn {
+      padding: 4px 10px;
+      background: #0f3460;
+      border: 1px solid #4fc3f7;
+      border-radius: 6px;
+      color: #4fc3f7;
+      font-size: 0.72rem;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .auth-logout-btn {
+      padding: 4px 10px;
+      background: none;
+      border: 1px solid #8899aa;
+      border-radius: 6px;
+      color: #8899aa;
+      font-size: 0.68rem;
+      cursor: pointer;
+      white-space: nowrap;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ── Login Modal ──────────────────────────────────── */
+    #login-modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 3000;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    #login-modal-overlay.open { display: flex; }
+    #login-modal {
+      background: #f8f9fb;
+      border: 1px solid #dde3ec;
+      border-radius: 16px;
+      padding: 28px 24px;
+      width: 100%;
+      max-width: 340px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    }
+    .login-logo {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .login-logo img {
+      height: 50px;
+      width: auto;
+    }
+    .login-title {
+      text-align: center;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #0f3460;
+      margin-bottom: 4px;
+    }
+    .login-sub {
+      text-align: center;
+      font-size: 0.72rem;
+      color: #64748b;
+      margin-bottom: 20px;
+    }
+    .login-err {
+      background: #3d0000;
+      border: 1px solid #ff6b6b;
+      color: #ff6b6b;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.78rem;
+      margin-bottom: 12px;
+      text-align: center;
+      display: none;
+    }
+    .login-err.show { display: block; }
+    .login-field-label {
+      font-size: 0.72rem;
+      color: #4a5568;
+      margin-bottom: 4px;
+      display: block;
+    }
+    .login-input {
+      width: 100%;
+      background: #ffffff;
+      border: 1px solid #c8d5e8;
+      border-radius: 8px;
+      color: #1a2b3c;
+      padding: 11px 14px;
+      font-size: 0.88rem;
+      margin-bottom: 12px;
+      outline: none;
+      font-family: inherit;
+      transition: border-color 0.2s;
+    }
+    .login-input:focus { border-color: #0f3460; }
+    .login-btn {
+      width: 100%;
+      padding: 13px;
+      background: #0f3460;
+      border: 1px solid #4fc3f7;
+      border-radius: 10px;
+      color: #4fc3f7;
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      -webkit-tap-highlight-color: transparent;
+      transition: background 0.15s;
+    }
+    .login-btn:active { background: #1a3d6e; }
+    .login-guest-btn {
+      width: 100%;
+      padding: 10px;
+      background: none;
+      border: 1px solid #c8d5e8;
+      border-radius: 10px;
+      color: #64748b;
+      font-size: 0.82rem;
+      cursor: pointer;
+      text-align: center;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .login-guest-btn:active { background: #eef2f8; }
+
+    /* ── Scrollbar ───────────────────────────────────── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #0d1b2a; }
+    ::-webkit-scrollbar-thumb { background: #1e3a5f; border-radius: 2px; }
+
+    /* ── Popup style ─────────────────────────────────── */
+    .leaflet-popup-content-wrapper {
+      background: #16213e !important;
+      border: 1px solid #0f3460 !important;
+      border-radius: 10px !important;
+      color: #e0e0e0 !important;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5) !important;
+    }
+    .leaflet-popup-tip { background: #16213e !important; }
+    .leaflet-popup-close-button { color: #aac4de !important; font-size: 1rem !important; }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────── -->
+<div id="header">
+  <img src="https://www.n-k.org.il/wp-content/themes/neot/images/He-n-k.png" alt="לוגו נאות קדומים" />
+  <div id="header-title">נקודות עניין</div>
+  <div id="auth-indicator"></div>
+  <button id="menu-btn" onclick="openSheet('spanel-layers')">
+    <i class="fa-solid fa-layer-group"></i>
+  </button>
+</div>
+
+<!-- ── Map ─────────────────────────────────────────── -->
+<div id="map"></div>
+
+<!-- ── Pin mode banner ─────────────────────────────── -->
+<div id="pin-banner">
+  <i class="fa-solid fa-crosshairs"></i> הקש על המפה לסימון הנקודה
+</div>
+
+<!-- ── Zoom + Locate ────────────────────────────────── -->
+<button id="locate-btn" onclick="geolocate()"><i class="fa-solid fa-location-crosshairs"></i></button>
+<div id="zoom-btns">
+  <button class="z-btn" onclick="map.zoomIn()">+</button>
+  <button class="z-btn" onclick="map.zoomOut()">−</button>
+</div>
+
+<!-- ── Coords pill ──────────────────────────────────── -->
+<div id="coords-pill">הקש על המפה</div>
+
+<!-- ── Bottom bar ──────────────────────────────────── -->
+<div id="bottom-bar">
+  <button class="bar-btn" onclick="goHome()">
+    <i class="fa-solid fa-house"></i>בית
+  </button>
+  <button class="bar-btn" onclick="openSheet('spanel-poi')">
+    <i class="fa-solid fa-list"></i>רשימה
+  </button>
+  <button id="fab" onclick="toggleAddMode()">
+    <i class="fa-solid fa-plus" id="fab-icon"></i>
+  </button>
+  <button class="bar-btn" onclick="openSheet('spanel-basemap')">
+    <i class="fa-solid fa-globe"></i>רקע
+  </button>
+  <button class="bar-btn" onclick="openSheet('spanel-layers')">
+    <i class="fa-solid fa-layer-group"></i>שכבות
+  </button>
+  <button class="bar-btn" onclick="openReportForm()" style="color:#ffa94d;">
+    <i class="fa-solid fa-triangle-exclamation"></i>דיווח
+  </button>
+</div>
+
+<!-- ── Bottom Sheet ─────────────────────────────────── -->
+<div id="sheet-overlay" onclick="closeSheet()"></div>
+<div id="bottom-sheet">
+  <div id="sheet-handle-bar"></div>
+  <div id="sheet-header">
+    <h2 id="sheet-title">שכבות</h2>
+    <button id="sheet-close" onclick="closeSheet()"><i class="fa-solid fa-xmark"></i></button>
+  </div>
+  <div id="sheet-tabs">
+    <button class="stab active" data-panel="spanel-layers" onclick="switchSheetTab(this)">
+      <i class="fa-solid fa-layer-group"></i>שכבות
+    </button>
+    <button class="stab" data-panel="spanel-poi" onclick="switchSheetTab(this)">
+      <i class="fa-solid fa-map-pin"></i>נקודות
+    </button>
+    <button class="stab" data-panel="spanel-basemap" onclick="switchSheetTab(this)">
+      <i class="fa-solid fa-globe"></i>רקע
+    </button>
+    <button class="stab" data-panel="spanel-export" onclick="switchSheetTab(this)">
+      <i class="fa-solid fa-file-export"></i>יצוא
+    </button>
+    <button class="stab" data-panel="spanel-reports" onclick="switchSheetTab(this)">
+      <i class="fa-solid fa-triangle-exclamation"></i>דיווחים
+    </button>
+  </div>
+
+  <!-- Layers panel -->
+  <div class="spanel active" id="spanel-layers">
+    <div class="s-card">
+      <div class="s-card-title"><i class="fa-solid fa-layer-group"></i>שכבות פעילות</div>
+      <div id="m-layer-list"></div>
+    </div>
+  </div>
+
+  <!-- POI list panel -->
+  <div class="spanel" id="spanel-poi">
+    <div class="s-card">
+      <div class="s-card-title">
+        <i class="fa-solid fa-map-pin"></i>
+        נקודות עניין (<span id="m-poi-count">0</span>)
+      </div>
+      <input type="text" class="pm-input" id="m-search" placeholder="חיפוש..." oninput="renderMPOIList(this.value)" style="margin-bottom:10px" />
+      <div id="m-poi-list"></div>
+    </div>
+  </div>
+
+  <!-- Basemap panel -->
+  <div class="spanel" id="spanel-basemap">
+    <div class="s-card">
+      <div class="s-card-title"><i class="fa-solid fa-map"></i>שכבת רקע</div>
+      <div class="bm-grid">
+        <div class="bm-card active" id="m-bl-osm" onclick="setMBase('osm')">
+          <i class="fa-solid fa-map-location-dot"></i>OpenStreetMap
+        </div>
+        <div class="bm-card" id="m-bl-satellite" onclick="setMBase('satellite')">
+          <i class="fa-solid fa-satellite"></i>לוויין
+        </div>
+        <div class="bm-card" id="m-bl-topo" onclick="setMBase('topo')">
+          <i class="fa-solid fa-mountain"></i>טופוגרפי
+        </div>
+        <div class="bm-card" id="m-bl-dark" onclick="setMBase('dark')">
+          <i class="fa-solid fa-moon"></i>כהה
+        </div>
+        <div class="bm-card" id="m-bl-orto" onclick="setMBase('orto')">
+          <i class="fa-solid fa-image"></i>אורתופוטו
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export panel -->
+  <div class="spanel" id="spanel-export">
+    <div class="s-card">
+      <div class="s-card-title"><i class="fa-solid fa-file-export"></i>יצוא נקודות</div>
+      <button class="pm-btn pm-btn-save" style="margin-bottom:10px;width:100%" onclick="exportGeoJSON()">
+        <i class="fa-solid fa-download"></i> GeoJSON
+      </button>
+      <button class="pm-btn pm-btn-save" style="width:100%" onclick="exportCSV()">
+        <i class="fa-solid fa-table"></i> CSV
+      </button>
+    </div>
+    <div class="s-card">
+      <div class="s-card-title"><i class="fa-solid fa-floppy-disk"></i>שמירה</div>
+      <button class="pm-btn pm-btn-save" style="width:100%;margin-bottom:8px" onclick="saveLocal()">
+        <i class="fa-solid fa-floppy-disk"></i> שמור בדפדפן
+      </button>
+      <a href="index.html" style="display:block">
+        <button class="pm-btn pm-btn-cancel" style="width:100%">
+          <i class="fa-solid fa-desktop"></i> פתח מסך מלא
+        </button>
+      </a>
+    </div>
+  </div>
+
+  <!-- Reports panel -->
+  <div class="spanel" id="spanel-reports">
+    <div class="s-card">
+      <div class="s-card-title">
+        <i class="fa-solid fa-triangle-exclamation" style="color:#ffa94d"></i>
+        בעיות שדווחו (<span id="report-count">0</span>)
+      </div>
+
+      <!-- Auth status -->
+      <div id="report-auth-note" style="font-size:0.75rem;color:#8899aa;margin-bottom:8px;padding:8px;background:#0d1b2a;border-radius:6px;border:1px solid #1e3a5f;">
+        <i class="fa-solid fa-circle-info" style="color:#4fc3f7"></i>
+        שינוי סטטוס זמין למנהלים בלבד.
+        <button onclick="openLoginModal()" style="background:none;border:none;color:#4fc3f7;cursor:pointer;font-size:0.75rem;text-decoration:underline;">כניסה</button>
+      </div>
+
+      <!-- Export button -->
+      <button class="pm-btn pm-btn-save" style="width:100%;margin-bottom:10px" onclick="exportReports()">
+        <i class="fa-solid fa-download"></i> ייצוא דיווחים (JSON)
+      </button>
+
+      <div id="report-list">
+        <div class="empty-state">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          אין דיווחים עדיין
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── POI Modal (add / edit) ───────────────────────── -->
+<div id="poi-modal-overlay">
+  <div id="poi-modal">
+    <div id="pm-handle"></div>
+    <div id="pm-header">
+      <h3 id="pm-title"><i class="fa-solid fa-map-pin"></i> נקודה חדשה</h3>
+      <button id="pm-close" onclick="closePOIModal()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div id="pm-body">
+      <label class="pm-label">שם *</label>
+      <input type="text" class="pm-input" id="pm-name" placeholder="שם הנקודה" />
+
+      <label class="pm-label">קטגוריה</label>
+      <div id="cat-grid">
+        <div class="cat-tile active" data-cat="general"   onclick="selectCat('general',this)">  <span>📍</span>כללי</div>
+        <div class="cat-tile" data-cat="nature"      onclick="selectCat('nature',this)">      <span>🌿</span>טבע</div>
+        <div class="cat-tile" data-cat="archaeology" onclick="selectCat('archaeology',this)"> <span>🏺</span>ארכיאו׳</div>
+        <div class="cat-tile" data-cat="water"       onclick="selectCat('water',this)">       <span>💧</span>מים</div>
+        <div class="cat-tile" data-cat="viewpoint"   onclick="selectCat('viewpoint',this)">   <span>🔭</span>תצפית</div>
+        <div class="cat-tile" data-cat="trail"       onclick="selectCat('trail',this)">       <span>🥾</span>שביל</div>
+        <div class="cat-tile" data-cat="agriculture" onclick="selectCat('agriculture',this)"> <span>🌾</span>חקלאות</div>
+        <div class="cat-tile" data-cat="building"    onclick="selectCat('building',this)">    <span>🏛️</span>מבנה</div>
+      </div>
+
+      <label class="pm-label">תיאור</label>
+      <textarea class="pm-input" id="pm-desc" placeholder="תיאור קצר..."></textarea>
+
+      <label class="pm-label">צבע סמן</label>
+      <div id="color-row">
+        <div class="cdot" data-c="#ff6b6b" style="background:#ff6b6b" onclick="selectColor('#ff6b6b',this)"></div>
+        <div class="cdot" data-c="#ffa94d" style="background:#ffa94d" onclick="selectColor('#ffa94d',this)"></div>
+        <div class="cdot" data-c="#ffe066" style="background:#ffe066" onclick="selectColor('#ffe066',this)"></div>
+        <div class="cdot" data-c="#52b788" style="background:#52b788" onclick="selectColor('#52b788',this)"></div>
+        <div class="cdot active" data-c="#4fc3f7" style="background:#4fc3f7" onclick="selectColor('#4fc3f7',this)"></div>
+        <div class="cdot" data-c="#a29bfe" style="background:#a29bfe" onclick="selectColor('#a29bfe',this)"></div>
+        <div class="cdot" data-c="#fd79a8" style="background:#fd79a8" onclick="selectColor('#fd79a8',this)"></div>
+        <div class="cdot" data-c="#ffffff" style="background:#ffffff;border:1px solid #444" onclick="selectColor('#ffffff',this)"></div>
+      </div>
+    </div>
+    <div id="pm-footer">
+      <button class="pm-btn pm-btn-cancel" onclick="closePOIModal()">ביטול</button>
+      <button class="pm-btn pm-btn-save"   onclick="savePOI()"><i class="fa-solid fa-check"></i> שמור</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ── Report Form Modal ───────────────────────────── -->
+<div id="report-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:2000;align-items:flex-end;">
+  <div id="report-modal" style="width:100%;background:#16213e;border-radius:18px 18px 0 0;border-top:2px solid #ffa94d;transform:translateY(100%);transition:transform 0.3s cubic-bezier(0.32,0.72,0,1);padding-bottom:env(safe-area-inset-bottom,16px);">
+    <div style="width:40px;height:4px;background:#2a4f7a;border-radius:2px;margin:10px auto 0"></div>
+    <div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;">
+      <h3 style="font-size:0.95rem;color:#ffa94d;display:flex;align-items:center;gap:7px;">
+        <i class="fa-solid fa-triangle-exclamation"></i> דיווח על בעיה
+      </h3>
+      <button onclick="closeReportForm()" style="background:none;border:none;color:#8899aa;font-size:1.1rem;cursor:pointer;">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+
+    <div id="report-form-body" style="padding:12px 16px;overflow-y:auto;max-height:65vh;">
+
+      <label class="pm-label">פרטי המדווח <span style="color:#ff6b6b">*</span></label>
+      <input type="text" class="pm-input" id="r-reporter" placeholder="שם מלא..."
+             oninput="this.style.borderColor='';this.style.boxShadow='';this.placeholder='שם מלא...'" />
+
+      <label class="pm-label">טלפון ליצירת קשר</label>
+      <input type="tel" class="pm-input" id="r-phone" placeholder="050-0000000" dir="ltr" />
+
+      <label class="pm-label">פירוט הבעיה <span style="color:#ff6b6b">*</span></label>
+      <textarea class="pm-input" id="r-detail" placeholder="תאר את הבעיה בפירוט..." style="min-height:80px"
+                oninput="this.style.borderColor='';this.style.boxShadow='';this.placeholder='תאר את הבעיה בפירוט...'"></textarea>
+
+      <label class="pm-label">צילום תמונה</label>
+      <label for="r-photo" style="display:flex;align-items:center;gap:8px;padding:12px;background:#0d1b2a;border:1px dashed #2a4f7a;border-radius:8px;cursor:pointer;margin-bottom:10px;color:#aac4de;font-size:0.82rem;">
+        <i class="fa-solid fa-camera" style="font-size:1.3rem;color:#4fc3f7"></i>
+        פתח מצלמה / בחר תמונה
+      </label>
+      <input type="file" id="r-photo" accept="image/*" capture="environment" style="display:none" onchange="previewPhoto(this)" />
+
+      <div id="photo-preview-wrap">
+        <img id="photo-preview" src="" alt="תצוגה מקדימה" />
+        <button id="photo-clear" onclick="clearPhoto()">
+          <i class="fa-solid fa-xmark"></i> הסר תמונה
+        </button>
+      </div>
+
+      <div style="background:#0d1b2a;border:1px solid #1e3a5f;border-radius:8px;padding:10px;margin-bottom:8px;font-size:0.75rem;color:#8899aa;">
+        <i class="fa-solid fa-location-dot" style="color:#52b788"></i>
+        <span id="r-location-label">בחר מיקום למטה</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <button onclick="requestGPS()" style="flex:1;padding:10px;background:#0d2a1a;border:1px dashed #52b788;border-radius:8px;color:#52b788;font-size:0.82rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+          <i class="fa-solid fa-satellite-dish"></i> מיקום GPS
+        </button>
+        <button onclick="pickLocationOnMap()" style="flex:1;padding:10px;background:#0d1b2a;border:1px dashed #4fc3f7;border-radius:8px;color:#4fc3f7;font-size:0.82rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+          <i class="fa-solid fa-map-location-dot"></i> סמן על המפה
+        </button>
+      </div>
+
+    </div>
+
+    <div style="display:flex;gap:10px;padding:0 16px 16px;">
+      <button class="pm-btn pm-btn-cancel" onclick="closeReportForm()">ביטול</button>
+      <button class="pm-btn" onclick="submitReport()"
+              style="flex:1;padding:13px;border:none;border-radius:10px;font-size:0.88rem;font-weight:700;cursor:pointer;background:#3d2600;color:#ffa94d;border:1px solid #ffa94d;display:flex;align-items:center;justify-content:center;gap:6px;">
+        <i class="fa-solid fa-paper-plane"></i> שלח דיווח
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Lightbox -->
+<div id="lightbox" onclick="closeLightbox()">
+  <button id="lightbox-close" onclick="closeLightbox()"><i class="fa-solid fa-xmark"></i></button>
+  <img id="lightbox-img" src="" alt="" />
+</div>
+
+
+<!-- ── Login Modal ─────────────────────────────────── -->
+<div id="login-modal-overlay">
+  <div id="login-modal">
+    <div class="login-logo">
+      <img src="https://www.n-k.org.il/wp-content/themes/neot/images/He-n-k.png"
+           alt="נאות קדומים"
+           onerror="this.style.display='none'" />
+    </div>
+    <div class="login-title">כניסה למערכת GIS</div>
+    <div class="login-sub">נאות קדומים – מערכת מידע גאוגרפית</div>
+
+    <div class="login-err" id="login-err-msg"></div>
+
+    <label class="login-field-label">כתובת מייל</label>
+    <input type="email" class="login-input" id="login-email"
+           placeholder="user@n-k.org.il" dir="ltr"
+           onkeydown="if(event.key==='Enter') document.getElementById('login-pass').focus()" />
+
+    <label class="login-field-label">סיסמה</label>
+    <input type="password" class="login-input" id="login-pass"
+           placeholder="••••••••" dir="ltr"
+           onkeydown="if(event.key==='Enter') submitLogin()" />
+
+    <button class="login-btn" onclick="submitLogin()">
+      <i class="fa-solid fa-right-to-bracket"></i> כניסה
+    </button>
+    <button class="login-guest-btn" onclick="continueAsGuest()">
+      המשך כאורח (צפייה בלבד)
+    </button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  CONSTANTS & STATE
+// ═══════════════════════════════════════════════════════
+const NEOT_CENTER = [31.9499, 34.9797];
+
+const CAT_ICONS = {
+  general:     { emoji:'📍', color:'#ffffff' },
+  nature:      { emoji:'🌿', color:'#52b788' },
+  archaeology: { emoji:'🏺', color:'#ffa94d' },
+  water:       { emoji:'💧', color:'#4fc3f7' },
+  viewpoint:   { emoji:'🔭', color:'#ffe066' },
+  trail:       { emoji:'🥾', color:'#ff6b6b' },
+  agriculture: { emoji:'🌾', color:'#a29bfe' },
+  building:    { emoji:'🏛️', color:'#fd79a8' },
+};
+const CAT_LABELS = { general:'כללי', nature:'טבע', archaeology:'ארכיאולוגיה', water:'מים', viewpoint:'תצפית', trail:'שביל', agriculture:'חקלאות', building:'מבנה' };
+
+let map, baseLayers = {}, currentBase = 'osm';
+let mLayers = {};          // id → {layer, name, color, visible}
+let pois = [], poiMarkers = {}, poiIdCtr = 0;
+let addMode = false, pendingLL = null, editId = null;
+let selCat = 'general', selColor = '#4fc3f7';
+let toastTimer;
+
+// ═══════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════
+function init() {
+  if (typeof proj4 !== 'undefined') {
+    proj4.defs('EPSG:2039',
+      '+proj=tmerc +lat_0=31.7343936111111 +lon_0=35.2045169444444 ' +
+      '+k=1.0000067 +x_0=219529.584 +y_0=626907.39 +ellps=GRS80 ' +
+      '+towgs84=-24.0024,17.1032,-17.8444,-0.33077,-1.85269,1.66969,5.4248 ' +
+      '+units=m +no_defs');
+  }
+
+  map = L.map('map', { zoomControl: false, attributionControl: true })
+         .setView(NEOT_CENTER, 14);
+
+  baseLayers.osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { attribution: '© OpenStreetMap', maxZoom: 19 });
+  baseLayers.satellite = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { attribution: '© Esri', maxZoom: 19 });
+  baseLayers.topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    { attribution: '© OpenTopoMap', maxZoom: 17 });
+  baseLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    { attribution: '© CartoDB', maxZoom: 19 });
+  baseLayers.orto = L.tileLayer('./Orto_tiles/{z}/{x}/{y}.png', {
+    attribution: '© נאות קדומים', minZoom: 14, maxZoom: 20, tms: true,
+    errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+  });
+  baseLayers.osm.addTo(map);
+
+  addBoundary();
+  loadPOIs();
+  loadReports();
+  loadAllReportMarkers();
+
+  map.on('click', onMapTap);
+  map.on('mousemove touchmove', e => {
+    document.getElementById('coords-pill').innerHTML =
+      `<span>${e.latlng.lat.toFixed(5)}</span>, <span>${e.latlng.lng.toFixed(5)}</span>`;
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+//  BOUNDARY
+// ═══════════════════════════════════════════════════════
+function addBoundary() {
+  const pts = [
+    [31.9505145,34.9674654],[31.9493588,34.9678381],[31.9492648,34.9678684],
+    [31.9489645,34.9687371],[31.9487137,34.9691698],[31.9484669,34.9696215],
+    [31.947695, 34.9701638],[31.9469387,34.9710824],[31.9468315,34.9712302],
+    [31.9465853,34.971418], [31.9467303,34.9720176],[31.9466578,34.9737796],
+    [31.9466364,34.9752599],[31.9445835,34.978713], [31.9445096,34.9788271],
+    [31.9442173,34.978667], [31.9442908,34.9796535],[31.9439136,34.979738],
+    [31.9439136,34.9799176],[31.9436608,34.9821107],[31.9431859,34.983682],
+    [31.9430508,34.9842826],[31.9438872,34.9841402],[31.9441084,34.9852804],
+    [31.9439062,34.9870858],[31.9441185,34.9880622],[31.9445504,34.9878557],
+    [31.9453502,34.9879413],[31.9456339,34.9883413],[31.9456944,34.9893717],
+    [31.9453782,34.9903308],[31.9449585,34.9905017],[31.9446123,34.9912457],
+    [31.9442057,34.9913384],[31.9452763,34.9920276],[31.9479297,34.9898318],
+    [31.950141, 34.990157], [31.9527694,34.9902924],[31.9547124,34.9826841],
+    [31.9546862,34.9799822],[31.9550582,34.9788493],[31.9554611,34.976893],
+    [31.9567592,34.9745623],[31.9567245,34.9728658],[31.9567099,34.9699661],
+    [31.9557887,34.9689725],[31.9554432,34.9686657],[31.9537644,34.9681628],
+    [31.9517207,34.9681521],[31.9511952,34.9679346],[31.9505145,34.9674654]
+  ];
+  const poly = L.polygon(pts, {
+    color:'#4fc3f7', weight:2.5, fillColor:'#4fc3f7', fillOpacity:0.06, dashArray:'6 4'
+  }).addTo(map);
+  mLayers['base-neot'] = { layer: poly, name: 'תחום השמורה', color: '#4fc3f7', visible: true };
+  // Wait for the map container to finish sizing before fitting bounds
+  map.invalidateSize();
+  setTimeout(() => {
+    map.fitBounds(poly.getBounds(), { padding: [28, 28] });
+  }, 150);
+  renderMLayerList();
+}
+
+// ═══════════════════════════════════════════════════════
+//  BASE LAYER
+// ═══════════════════════════════════════════════════════
+function setMBase(id) {
+  if (currentBase === id) return;
+  map.removeLayer(baseLayers[currentBase]);
+  baseLayers[id].addTo(map).bringToBack();
+  currentBase = id;
+  document.querySelectorAll('.bm-card').forEach(c => c.classList.remove('active'));
+  document.getElementById('m-bl-' + id).classList.add('active');
+}
+
+// ═══════════════════════════════════════════════════════
+//  LAYER LIST
+// ═══════════════════════════════════════════════════════
+function renderMLayerList() {
+  const el = document.getElementById('m-layer-list');
+  el.innerHTML = '';
+  for (const [id, info] of Object.entries(mLayers)) {
+    const div = document.createElement('div');
+    div.className = 'm-layer';
+    div.innerHTML = `
+      <span class="m-layer-dot" style="background:${info.color}"></span>
+      <span class="m-layer-name">${info.name}</span>
+      <button class="m-toggle ${info.visible?'':'off'}" onclick="toggleMLayer('${id}')">
+        <i class="fa-solid ${info.visible?'fa-eye':'fa-eye-slash'}"></i>
+      </button>`;
+    el.appendChild(div);
+  }
+}
+
+function toggleMLayer(id) {
+  const info = mLayers[id]; if (!info) return;
+  info.visible ? map.removeLayer(info.layer) : info.layer.addTo(map);
+  info.visible = !info.visible;
+  renderMLayerList();
+}
+
+// ═══════════════════════════════════════════════════════
+//  ADD POI FLOW
+// ═══════════════════════════════════════════════════════
+function toggleAddMode() {
+  addMode = !addMode;
+  const fab  = document.getElementById('fab');
+  const banner = document.getElementById('pin-banner');
+  fab.classList.toggle('active', addMode);
+  banner.classList.toggle('active', addMode);
+  map.getContainer().style.cursor = addMode ? 'crosshair' : '';
+  if (addMode) closeSheet();
+}
+
+function onMapTap(e) {
+  if (!addMode) return;
+  pendingLL = e.latlng;
+  editId    = null;
+  // Reset form
+  document.getElementById('pm-name').value = '';
+  document.getElementById('pm-desc').value = '';
+  document.getElementById('pm-title').innerHTML = '<i class="fa-solid fa-map-pin"></i> נקודה חדשה';
+  selectCat('general', document.querySelector('.cat-tile[data-cat="general"]'));
+  selectColor('#4fc3f7', document.querySelector('.cdot[data-c="#4fc3f7"]'));
+  toggleAddMode(); // turn off add mode
+  openPOIModal();
+}
+
+// ═══════════════════════════════════════════════════════
+//  POI CRUD
+// ═══════════════════════════════════════════════════════
+function createMarker(poi) {
+  const info = CAT_ICONS[poi.cat] || CAT_ICONS.general;
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="background:${poi.color};border:2px solid rgba(0,0,0,0.35);border-radius:50% 50% 50% 0;
+           transform:rotate(-45deg);width:32px;height:32px;display:flex;align-items:center;
+           justify-content:center;box-shadow:0 3px 8px rgba(0,0,0,0.5)">
+           <span style="transform:rotate(45deg);font-size:15px">${info.emoji}</span></div>`,
+    iconSize:[32,32], iconAnchor:[16,32], popupAnchor:[0,-34]
+  });
+  return L.marker([poi.lat, poi.lng], { icon });
+}
+
+function buildPopup(poi) {
+  const info = CAT_ICONS[poi.cat] || CAT_ICONS.general;
+  return `<div style="direction:rtl;min-width:170px;font-family:Segoe UI,Arial,sans-serif">
+    <b style="font-size:0.95rem">${info.emoji} ${poi.name}</b>
+    <div style="font-size:0.72rem;color:#aaa;margin:3px 0">${CAT_LABELS[poi.cat]||''}</div>
+    ${poi.desc ? `<div style="font-size:0.8rem;margin-bottom:6px">${poi.desc}</div>` : ''}
+    <div style="font-size:0.7rem;color:#8899aa;margin-bottom:8px">
+      📍 ${poi.lat.toFixed(5)}, ${poi.lng.toFixed(5)}</div>
+    <div style="display:flex;gap:6px">
+      <button onclick="editPOI(${poi.id})" style="flex:1;padding:5px;background:#0f3460;border:1px solid #4fc3f7;color:#4fc3f7;border-radius:5px;cursor:pointer;font-size:0.75rem">ערוך</button>
+      <button onclick="deletePOI(${poi.id})" style="flex:1;padding:5px;background:#3d0000;border:1px solid #ff6b6b;color:#ff6b6b;border-radius:5px;cursor:pointer;font-size:0.75rem">מחק</button>
+    </div>
+  </div>`;
+}
+
+function savePOI() {
+  const name = document.getElementById('pm-name').value.trim();
+  if (!name) { toast('יש להזין שם'); return; }
+  const desc = document.getElementById('pm-desc').value.trim();
+
+  if (editId !== null) {
+    const poi = pois.find(p => p.id === editId);
+    if (poi) {
+      poi.name = name; poi.desc = desc; poi.cat = selCat; poi.color = selColor;
+      poiMarkers[editId].setIcon(createMarker(poi).options.icon);
+      poiMarkers[editId].setPopupContent(buildPopup(poi));
+    }
+    toast('נקודה עודכנה');
+  } else {
+    const id  = ++poiIdCtr;
+    const poi = { id, name, desc, cat: selCat, color: selColor, lat: pendingLL.lat, lng: pendingLL.lng };
+    pois.push(poi);
+    const m   = createMarker(poi).addTo(map).bindPopup(buildPopup(poi), { maxWidth:260 });
+    m.on('click', () => m.openPopup());
+    poiMarkers[id] = m;
+    toast('נקודה נוספה ✓');
+  }
+
+  closePOIModal();
+  renderMPOIList();
+  saveLocal(true);
+}
+
+function editPOI(id) {
+  const poi = pois.find(p => p.id === id); if (!poi) return;
+  editId = id;
+  document.getElementById('pm-name').value = poi.name;
+  document.getElementById('pm-desc').value = poi.desc;
+  document.getElementById('pm-title').innerHTML = '<i class="fa-solid fa-pen"></i> עריכת נקודה';
+  selectCat(poi.cat, document.querySelector(`.cat-tile[data-cat="${poi.cat}"]`));
+  selectColor(poi.color, document.querySelector(`.cdot[data-c="${poi.color}"]`) || document.querySelector('.cdot'));
+  map.closePopup();
+  openPOIModal();
+}
+
+function deletePOI(id) {
+  map.removeLayer(poiMarkers[id]);
+  delete poiMarkers[id];
+  pois = pois.filter(p => p.id !== id);
+  renderMPOIList();
+  map.closePopup();
+  saveLocal(true);
+  toast('נקודה נמחקה');
+}
+
+function renderMPOIList(filter = '') {
+  const ul    = document.getElementById('m-poi-list');
+  const filt  = filter.toLowerCase();
+  const list  = pois.filter(p => !filt || p.name.toLowerCase().includes(filt));
+  document.getElementById('m-poi-count').textContent = pois.length;
+  ul.innerHTML = '';
+
+  if (list.length === 0) {
+    ul.innerHTML = `<div class="empty-state"><i class="fa-solid fa-map-pin"></i>אין נקודות עניין עדיין.<br/>לחץ + להוספה</div>`;
+    return;
+  }
+  list.forEach(poi => {
+    const info = CAT_ICONS[poi.cat] || CAT_ICONS.general;
+    const div  = document.createElement('div');
+    div.className = 'poi-row';
+    div.innerHTML = `
+      <div class="poi-row-icon">${info.emoji}</div>
+      <div class="poi-row-info">
+        <div class="poi-row-name">${poi.name}</div>
+        <div class="poi-row-cat">${CAT_LABELS[poi.cat]||''}</div>
+      </div>
+      <button class="poi-del" onclick="event.stopPropagation();deletePOI(${poi.id})">
+        <i class="fa-solid fa-trash"></i>
+      </button>`;
+    div.addEventListener('click', () => {
+      closeSheet();
+      map.flyTo([poi.lat, poi.lng], 17, { duration: 1 });
+      setTimeout(() => poiMarkers[poi.id]?.openPopup(), 1100);
+    });
+    ul.appendChild(div);
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+//  MODAL
+// ═══════════════════════════════════════════════════════
+function openPOIModal() {
+  const ov = document.getElementById('poi-modal-overlay');
+  const m  = document.getElementById('poi-modal');
+  ov.classList.add('open');
+  requestAnimationFrame(() => m.classList.add('open'));
+  setTimeout(() => document.getElementById('pm-name').focus(), 350);
+}
+function closePOIModal() {
+  const ov = document.getElementById('poi-modal-overlay');
+  const m  = document.getElementById('poi-modal');
+  m.classList.remove('open');
+  setTimeout(() => ov.classList.remove('open'), 300);
+  editId = null;
+}
+
+function selectCat(cat, el) {
+  selCat = cat;
+  document.querySelectorAll('.cat-tile').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+}
+function selectColor(c, el) {
+  selColor = c;
+  document.querySelectorAll('.cdot').forEach(d => d.classList.remove('active'));
+  if (el) el.classList.add('active');
+}
+
+// ═══════════════════════════════════════════════════════
+//  BOTTOM SHEET
+// ═══════════════════════════════════════════════════════
+function openSheet(panelId) {
+  if (addMode) toggleAddMode();
+  switchSheetTab(document.querySelector(`.stab[data-panel="${panelId}"]`));
+  document.getElementById('sheet-overlay').classList.add('open');
+  document.getElementById('bottom-sheet').classList.add('open');
+}
+function closeSheet() {
+  document.getElementById('sheet-overlay').classList.remove('open');
+  document.getElementById('bottom-sheet').classList.remove('open');
+}
+function switchSheetTab(btn) {
+  if (!btn) return;
+  document.querySelectorAll('.stab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.spanel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(btn.dataset.panel).classList.add('active');
+  const titles = { 'spanel-layers':'שכבות', 'spanel-poi':'נקודות עניין', 'spanel-basemap':'שכבת רקע', 'spanel-export':'יצוא', 'spanel-reports':'בעיות מדווחות' };
+  document.getElementById('sheet-title').textContent = titles[btn.dataset.panel] || '';
+  if (btn.dataset.panel === 'spanel-poi') renderMPOIList(document.getElementById('m-search').value);
+}
+
+// ═══════════════════════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════════════════════
+function goHome() {
+  const poly = mLayers['base-neot']?.layer;
+  if (poly) map.fitBounds(poly.getBounds(), { padding: [20, 20] });
+  else map.flyTo(NEOT_CENTER, 14);
+}
+function geolocate() {
+  if (!navigator.geolocation) { toast('מיקום לא נתמך'); return; }
+  navigator.geolocation.getCurrentPosition(pos => {
+    const ll = [pos.coords.latitude, pos.coords.longitude];
+    L.circleMarker(ll, {
+      radius:8, fillColor:'#4fc3f7', color:'#fff', weight:2, fillOpacity:1
+    }).addTo(map).bindPopup('המיקום שלך').openPopup();
+    map.setView(ll, 17);
+  }, () => toast('לא ניתן לקבל מיקום'));
+}
+
+// ═══════════════════════════════════════════════════════
+//  STORAGE (shared key with desktop)
+// ═══════════════════════════════════════════════════════
+function saveLocal(silent = false) {
+  localStorage.setItem('neot_pois', JSON.stringify(pois));
+  if (!silent) toast('נשמר (' + pois.length + ' נקודות)');
+}
+function loadPOIs() {
+  const saved = localStorage.getItem('neot_pois');
+  if (!saved) return;
+  try {
+    JSON.parse(saved).forEach(poi => {
+      poiIdCtr = Math.max(poiIdCtr, poi.id);
+      pois.push(poi);
+      const m = createMarker(poi).addTo(map).bindPopup(buildPopup(poi), { maxWidth:260 });
+      m.on('click', () => m.openPopup());
+      poiMarkers[poi.id] = m;
+    });
+    renderMPOIList();
+    if (pois.length) toast('נטענו ' + pois.length + ' נקודות');
+  } catch(_) {}
+}
+
+// ═══════════════════════════════════════════════════════
+//  EXPORT
+// ═══════════════════════════════════════════════════════
+function exportGeoJSON() {
+  if (!pois.length) { toast('אין נקודות לייצוא'); return; }
+  const geojson = { type:'FeatureCollection', features: pois.map(p => ({
+    type:'Feature',
+    geometry:{ type:'Point', coordinates:[p.lng, p.lat] },
+    properties:{ name:p.name, category:p.cat, description:p.desc, color:p.color }
+  }))};
+  dl(JSON.stringify(geojson,null,2), 'neot-poi.geojson', 'application/json');
+  toast('GeoJSON יוצא');
+}
+function exportCSV() {
+  if (!pois.length) { toast('אין נקודות לייצוא'); return; }
+  const rows = ['name,category,description,lat,lng']
+    .concat(pois.map(p => `"${p.name}","${CAT_LABELS[p.cat]||p.cat}","${p.desc}","${p.lat}","${p.lng}"`));
+  dl(rows.join('\n'), 'neot-poi.csv', 'text/csv;charset=utf-8');
+  toast('CSV יוצא');
+}
+function dl(content, name, mime) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿'+content], {type:mime}));
+  a.download = name; a.click(); URL.revokeObjectURL(a.href);
+}
+
+// ═══════════════════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════════════════
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  REPORT / SURVEY SYSTEM
+// ═══════════════════════════════════════════════════════
+const ADMIN_PIN   = '1234';        // ← שנה לפי הצורך
+const REPORT_KEY  = 'neot_reports';
+let reports       = [];
+let reportIdCtr   = 0;
+let currentPhotoB64 = null;
+let reportLocation  = null;
+
+// ── Load on init ────────────────────────────────────
+function loadAllReportMarkers() {
+  reports.forEach(r => { if (r.location) addReportMarker(r); });
+}
+
+function loadReports() {
+  try {
+    const saved = localStorage.getItem(REPORT_KEY);
+    if (saved) {
+      reports = JSON.parse(saved);
+      reportIdCtr = reports.reduce((m, r) => Math.max(m, r.id), 0);
+    }
+  } catch(e) {}
+  renderReportList();
+}
+
+function saveReports() {
+  try {
+    localStorage.setItem(REPORT_KEY, JSON.stringify(reports));
+  } catch(e) {
+    // localStorage מלא — שמור ללא תמונות
+    try {
+      const slim = reports.map(r => ({ ...r, photo: null }));
+      localStorage.setItem(REPORT_KEY, JSON.stringify(slim));
+      toast('⚠️ הדיווח נשמר ללא תמונה (אחסון מלא)');
+    } catch(e2) {
+      toast('❌ שגיאה בשמירה: ' + e2.message);
+    }
+  }
+}
+
+// ── Open / close form ───────────────────────────────
+function openReportForm() {
+  closeSheet();
+  // Reset fields
+  document.getElementById('r-reporter').value = currentUser ? currentUser.name : '';
+  document.getElementById('r-phone').value    = '';
+  document.getElementById('r-detail').value   = '';
+  clearPhoto();
+
+  // reset location
+  reportLocation = null;
+  const lbl = document.getElementById('r-location-label');
+  lbl.textContent = 'לחץ על אחד הכפתורים למטה לבחירת מיקום';
+  lbl.style.color = '#8899aa';
+
+  const ov = document.getElementById('report-modal-overlay');
+  const m  = document.getElementById('report-modal');
+  ov.style.display = 'flex';
+  requestAnimationFrame(() => m.style.transform = 'translateY(0)');
+}
+
+function closeReportForm() {
+  const m  = document.getElementById('report-modal');
+  const ov = document.getElementById('report-modal-overlay');
+  m.style.transform = 'translateY(100%)';
+  setTimeout(() => { ov.style.display = 'none'; }, 310);
+  // בטל מצב בחירת מיקום אם פעיל
+  if (window._pickingLocation) cancelPickLocation();
+}
+
+// ── בקשת GPS מפורשת (ללחיצת משתמש) ─────────────────
+function requestGPS() {
+  const lbl = document.getElementById('r-location-label');
+  if (!navigator.geolocation) {
+    lbl.textContent = 'GPS לא נתמך במכשיר';
+    lbl.style.color = '#ff6b6b';
+    return;
+  }
+  lbl.textContent = '⏳ מאתר מיקום...';
+  lbl.style.color = '#8899aa';
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      reportLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: Math.round(pos.coords.accuracy) };
+      lbl.textContent = `✅ ${reportLocation.lat.toFixed(5)}, ${reportLocation.lng.toFixed(5)} (דיוק: ${reportLocation.acc}מ')`;
+      lbl.style.color = '#52b788';
+      // הצג על המפה
+      if (_pickMarker) { map.removeLayer(_pickMarker); }
+      _pickMarker = L.marker([reportLocation.lat, reportLocation.lng], {
+        icon: L.divIcon({
+          className: '',
+          html: `<div style="background:#52b788;border:3px solid #fff;border-radius:50%;width:22px;height:22px;box-shadow:0 2px 6px rgba(0,0,0,0.5)"></div>`,
+          iconSize:[22,22], iconAnchor:[11,11]
+        })
+      }).addTo(map);
+    },
+    err => {
+      const msgs = {1:'נדחתה הרשאת מיקום — אפשרי בהגדרות', 2:'לא ניתן לאתר מיקום', 3:'פג זמן — נסי שוב'};
+      lbl.textContent = '⚠️ ' + (msgs[err.code] || err.message);
+      lbl.style.color = '#ffa94d';
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+  );
+}
+
+// ── בחירת מיקום על המפה ──────────────────────────────
+let _pickMarker = null;
+
+function pickLocationOnMap() {
+  // סגור את הטופס זמנית
+  const m = document.getElementById('report-modal');
+  m.style.transform = 'translateY(100%)';
+
+  window._pickingLocation = true;
+
+  // באנר הנחיה
+  const banner = document.createElement('div');
+  banner.id = 'pick-banner';
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:3000;background:#1565C0;color:#fff;text-align:center;padding:14px 12px;font-size:0.9rem;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:8px;';
+  banner.innerHTML = `
+    <span><i class="fa-solid fa-map-location-dot"></i> לחץ על המפה לסימון מיקום הבעיה</span>
+    <button onclick="cancelPickLocation()" style="background:rgba(255,255,255,0.2);border:none;color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:0.8rem;">ביטול</button>
+  `;
+  document.body.appendChild(banner);
+
+  // הסר מרקר קודם
+  if (_pickMarker) { map.removeLayer(_pickMarker); _pickMarker = null; }
+
+  map.once('click', function(e) {
+    if (!window._pickingLocation) return;
+    reportLocation = { lat: e.latlng.lat, lng: e.latlng.lng, acc: 0 };
+
+    _pickMarker = L.marker([e.latlng.lat, e.latlng.lng], {
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="background:#1565C0;border:3px solid #fff;border-radius:50%;width:22px;height:22px;box-shadow:0 2px 6px rgba(0,0,0,0.5)"></div>`,
+        iconSize:[22,22], iconAnchor:[11,11]
+      })
+    }).addTo(map);
+
+    document.getElementById('r-location-label').textContent =
+      `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)} (סומן ידנית)`;
+
+    // החזר את הטופס
+    cancelPickLocation(true);
+  });
+}
+
+function cancelPickLocation(keepLocation) {
+  window._pickingLocation = false;
+  map.off('click');
+  const banner = document.getElementById('pick-banner');
+  if (banner) banner.remove();
+  // החזר את הטופס
+  const m = document.getElementById('report-modal');
+  m.style.transform = 'translateY(0)';
+  if (!keepLocation && _pickMarker) {
+    map.removeLayer(_pickMarker);
+    _pickMarker = null;
+    reportLocation = null;
+  }
+}
+
+// ── Photo ────────────────────────────────────────────
+function previewPhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    currentPhotoB64 = e.target.result;
+    document.getElementById('photo-preview').src = currentPhotoB64;
+    document.getElementById('photo-preview-wrap').style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearPhoto() {
+  currentPhotoB64 = null;
+  document.getElementById('photo-preview').src = '';
+  document.getElementById('photo-preview-wrap').style.display = 'none';
+  document.getElementById('r-photo').value = '';
+}
+
+// ── Submit ───────────────────────────────────────────
+function submitReport() {
+  const rField    = document.getElementById('r-reporter');
+  const dField    = document.getElementById('r-detail');
+  const reporter  = rField.value.trim();   // בודק את השדה בלבד, ללא fallback
+  const detail    = dField.value.trim();
+
+  // ── ולידציה עם הדגשת שדות ──
+  let valid = true;
+
+  [rField, dField].forEach(f => {
+    f.style.borderColor = '';
+    f.style.boxShadow   = '';
+  });
+
+  if (!reporter) {
+    rField.style.borderColor = '#ff6b6b';
+    rField.style.boxShadow   = '0 0 0 2px rgba(255,107,107,0.35)';
+    rField.placeholder       = '⚠️ שדה חובה — יש להזין שם';
+    rField.focus();
+    valid = false;
+  }
+  if (!detail) {
+    dField.style.borderColor = '#ff6b6b';
+    dField.style.boxShadow   = '0 0 0 2px rgba(255,107,107,0.35)';
+    dField.placeholder       = '⚠️ שדה חובה — יש לתאר את הבעיה';
+    if (valid) dField.focus();
+    valid = false;
+  }
+
+  if (!valid) {
+    toast('⚠️ יש למלא את כל שדות החובה המסומנים באדום');
+    return;
+  }
+
+  const now = new Date();
+  const report = {
+    id:        ++reportIdCtr,
+    reporter:  reporter,
+    phone:     document.getElementById('r-phone').value.trim(),
+    detail:    detail,
+    photo:     currentPhotoB64 || null,
+    location:  reportLocation,
+    submittedBy: getUserName(),
+    status:    'new',
+    timestamp: now.toISOString(),
+    timestampHe: now.toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }),
+    statusHistory: [{ status: 'new', time: now.toISOString() }]
+  };
+
+  reports.unshift(report);   // newest first
+  saveReports();
+  renderReportList();
+  closeReportForm();
+
+  // Add marker on map
+  addReportMarker(report);
+
+  toast('הדיווח נשמר ✓');
+}
+
+// ── Marker on map ────────────────────────────────────
+function addReportMarker(report) {
+  if (!report.location) return;
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="background:#ffa94d;border:2px solid rgba(0,0,0,0.35);border-radius:50% 50% 50% 0;
+           transform:rotate(-45deg);width:30px;height:30px;display:flex;align-items:center;
+           justify-content:center;box-shadow:0 3px 8px rgba(0,0,0,0.5)">
+           <span style="transform:rotate(45deg);font-size:14px">⚠️</span></div>`,
+    iconSize:[30,30], iconAnchor:[15,30], popupAnchor:[0,-32]
+  });
+  const m = L.marker([report.location.lat, report.location.lng], { icon })
+    .addTo(map)
+    .bindPopup(buildReportPopup(report), { maxWidth: 260 });
+  m.on('click', () => m.openPopup());
+}
+
+function buildReportPopup(report) {
+  const statusLabels = { new:'חדש', inprogress:'בטיפול', done:'טופל' };
+  return `<div style="direction:rtl;font-family:Segoe UI,Arial,sans-serif;min-width:180px">
+    <b style="font-size:0.9rem">⚠️ בעיה מדווחת</b>
+    <div style="font-size:0.72rem;color:#aaa;margin:3px 0">${report.timestampHe}</div>
+    <div style="font-size:0.8rem;margin-bottom:5px">${report.detail}</div>
+    <div style="font-size:0.72rem;color:#8899aa">מדווח: ${report.reporter}</div>
+    <div style="margin-top:6px;font-size:0.75rem">סטטוס: <b>${statusLabels[report.status]||report.status}</b></div>
+  </div>`;
+}
+
+// ── Render list ──────────────────────────────────────
+function renderReportList() {
+  const el = document.getElementById('report-list');
+  const count = document.getElementById('report-count');
+  count.textContent = reports.length;
+
+  if (reports.length === 0) {
+    el.innerHTML = '<div class="empty-state"><i class="fa-solid fa-triangle-exclamation"></i>אין דיווחים עדיין</div>';
+    return;
+  }
+
+  const statusLabel = { new:'חדש', inprogress:'בטיפול', done:'טופל' };
+  const statusClass = { new:'status-new', inprogress:'status-inprogress', done:'status-done' };
+
+  el.innerHTML = reports.map(r => {
+    const locStr = r.location
+      ? `📍 ${r.location.lat.toFixed(4)}, ${r.location.lng.toFixed(4)}`
+      : '📍 מיקום לא זמין';
+
+    const photoHtml = r.photo
+      ? `<img class="report-card-img" src="${r.photo}" onclick="openLightbox('${r.id}')" alt="תמונה" />`
+      : '';
+
+    const adminBtns = isAdmin() ? `
+      <button class="status-btn status-btn-inprogress" onclick="setReportStatus(${r.id},'inprogress')">בטיפול</button>
+      <button class="status-btn status-btn-done"       onclick="setReportStatus(${r.id},'done')">טופל</button>
+      <button class="status-btn status-btn-del"        onclick="deleteReport(${r.id})">מחק</button>
+    ` : '';
+
+    return `<div class="report-card" id="rcard-${r.id}">
+      <div class="report-card-header">
+        <div class="report-card-name">${r.reporter}${r.phone ? ' · ' + r.phone : ''}</div>
+        <span class="report-status ${statusClass[r.status]||'status-new'}">${statusLabel[r.status]||r.status}</span>
+      </div>
+      <div class="report-card-time"><i class="fa-regular fa-clock"></i> ${r.timestampHe} &nbsp;|&nbsp; <i class="fa-solid fa-user"></i> ${r.submittedBy||r.reporter}</div>
+      <div class="report-card-detail">${r.detail}</div>
+      <div class="report-card-loc">${locStr}</div>
+      ${photoHtml}
+      <div class="report-status-row">${adminBtns}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Admin ─────────────────────────────────────────────
+
+
+function setReportStatus(id, status) {
+  const r = reports.find(r => r.id === id);
+  if (!r) return;
+  r.status = status;
+  r.statusHistory.push({ status, time: new Date().toISOString() });
+  saveReports();
+  renderReportList();
+  toast(status === 'inprogress' ? 'סטטוס: בטיפול' : 'סטטוס: טופל');
+}
+
+function deleteReport(id) {
+  reports = reports.filter(r => r.id !== id);
+  saveReports();
+  renderReportList();
+  toast('דיווח נמחק');
+}
+
+// ── Export ────────────────────────────────────────────
+function exportReports() {
+  if (!reports.length) { toast('אין דיווחים לייצוא'); return; }
+  const geojson = {
+    type: 'FeatureCollection',
+    exported: new Date().toISOString(),
+    features: reports.map(r => ({
+      type: 'Feature',
+      geometry: r.location
+        ? { type: 'Point', coordinates: [r.location.lng, r.location.lat] }
+        : null,
+      properties: {
+        id:        r.id,
+        reporter:  r.reporter,
+        phone:     r.phone,
+        detail:    r.detail,
+        status:    r.status,
+        timestamp: r.timestamp,
+        timestampHe: r.timestampHe,
+        hasPhoto:  !!r.photo,
+        accuracy_m: r.location?.acc || null
+      }
+    }))
+  };
+  const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'neot-kadumim-reports-' + new Date().toISOString().slice(0,10) + '.geojson';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('קובץ GeoJSON הורד');
+}
+
+// ── Lightbox ──────────────────────────────────────────
+function openLightbox(reportId) {
+  const r = reports.find(r => r.id == reportId);
+  if (!r || !r.photo) return;
+  document.getElementById('lightbox-img').src = r.photo;
+  document.getElementById('lightbox').classList.add('open');
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+}
+
+
+
+// ═══════════════════════════════════════════════════════
+//  AUTH SYSTEM
+// ═══════════════════════════════════════════════════════
+const AUTHORIZED_USERS = [
+  { email: 'Ayalaeilot@gmail.com', password: 'NK12345', name: 'אילה אורן', role: 'admin' },
+  // הוסף משתמשים נוספים כאן:
+  // { email: 'user@n-k.org.il', password: 'password', name: 'שם', role: 'admin' },
+];
+const SESSION_KEY = 'nk_session';
+let currentUser = null;
+
+function authInit() {
+  // Show login on first visit; skip if session exists
+  try {
+    const s = sessionStorage.getItem(SESSION_KEY);
+    if (s) {
+      currentUser = JSON.parse(s);
+      renderAuthUI();
+      return;
+    }
+  } catch(e) {}
+  // No session – show login modal automatically
+  openLoginModal();
+}
+
+function openLoginModal() {
+  document.getElementById('login-email').value = '';
+  document.getElementById('login-pass').value  = '';
+  document.getElementById('login-err-msg').classList.remove('show');
+  document.getElementById('login-modal-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('login-email').focus(), 200);
+}
+
+function closeLoginModal() {
+  document.getElementById('login-modal-overlay').classList.remove('open');
+}
+
+function submitLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass  = document.getElementById('login-pass').value;
+  const err   = document.getElementById('login-err-msg');
+
+  const user = AUTHORIZED_USERS.find(
+    u => u.email.toLowerCase() === email.toLowerCase() && u.password === pass
+  );
+
+  if (!user) {
+    err.textContent = 'מייל או סיסמה שגויים';
+    err.classList.add('show');
+    document.getElementById('login-pass').value = '';
+    return;
+  }
+
+  currentUser = { email: user.email, name: user.name, role: user.role };
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(currentUser));
+  closeLoginModal();
+  renderAuthUI();
+  toast('ברוך הבא, ' + user.name + ' ✓');
+  // Refresh report list to show admin buttons
+  renderReportList();
+}
+
+function continueAsGuest() {
+  currentUser = null;
+  closeLoginModal();
+  renderAuthUI();
+  renderReportList();
+  toast('ממשיך כאורח – צפייה בלבד');
+}
+
+function authLogout() {
+  currentUser = null;
+  sessionStorage.removeItem(SESSION_KEY);
+  renderAuthUI();
+  renderReportList();
+  toast('התנתקת מהמערכת');
+  // Show login again
+  setTimeout(openLoginModal, 800);
+}
+
+function isAdmin()     { return currentUser?.role === 'admin'; }
+function getUserName() { return currentUser ? currentUser.name : 'אורח'; }
+
+function renderAuthUI() {
+  const el = document.getElementById('auth-indicator');
+  if (!el) return;
+  if (currentUser) {
+    el.innerHTML = `
+      <span style="font-size:0.7rem;color:#555;font-weight:600;white-space:nowrap;">
+        <i class="fa-solid fa-circle-user" style="color:#4fc3f7"></i>
+        ${currentUser.name}
+      </span>
+      <button onclick="authLogout()"
+        style="padding:3px 8px;background:none;border:1px solid #ccc;border-radius:5px;
+               color:#888;font-size:0.65rem;cursor:pointer;white-space:nowrap;">
+        יציאה
+      </button>`;
+  } else {
+    el.innerHTML = `
+      <span style="font-size:0.7rem;color:#888;white-space:nowrap;">
+        <i class="fa-solid fa-user"></i> אורח
+      </span>
+      <button onclick="openLoginModal()"
+        style="padding:3px 8px;background:#0f3460;border:1px solid #4fc3f7;border-radius:5px;
+               color:#4fc3f7;font-size:0.65rem;cursor:pointer;white-space:nowrap;">
+        כניסה
+      </button>`;
+  }
+}
+
+
+window.addEventListener('DOMContentLoaded', () => { authInit(); init(); });
+</script>
+</body>
+</html>

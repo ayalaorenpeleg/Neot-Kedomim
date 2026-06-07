@@ -1,0 +1,20 @@
+# Large local-only folders
+Orto_tiles/
+dwg_export/
+DXF_Survey/
+DXF_Survey.gpkg
+shp_export_FINAL/other_line.*
+shp_export_FINAL/other_point.*
+shp_export_FINAL/other_polygon.*
+
+# Security
+server.pem
+server_log.txt
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
