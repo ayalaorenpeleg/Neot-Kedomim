@@ -1,3 +1,9 @@
+# Claude internal config
+.claude/
+
+# Old SHP versions
+SHP_Clean/Old versions/
+
 # Large local-only folders
 Orto_tiles/
 dwg_export/
