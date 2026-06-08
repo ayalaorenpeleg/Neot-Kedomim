@@ -1538,9 +1538,12 @@ function requestGPS() {
 let _pickMarker = null;
 
 function pickLocationOnMap() {
-  // סגור את הטופס זמנית
-  const m = document.getElementById('report-modal');
-  m.style.transform = 'translateY(100%)';
+  // סגור את הטופס זמנית + הסתר overlay כדי לאפשר לחיצות על המפה
+  const m  = document.getElementById('report-modal');
+  const ov = document.getElementById('report-modal-overlay');
+  m.style.transform    = 'translateY(100%)';
+  ov.style.pointerEvents = 'none';  // אפשר לחיצות דרכו
+  ov.style.background    = 'transparent';
 
   window._pickingLocation = true;
 
@@ -1582,9 +1585,12 @@ function cancelPickLocation(keepLocation) {
   map.off('click');
   const banner = document.getElementById('pick-banner');
   if (banner) banner.remove();
-  // החזר את הטופס
-  const m = document.getElementById('report-modal');
-  m.style.transform = 'translateY(0)';
+  // החזר את הטופס + ה-overlay
+  const m  = document.getElementById('report-modal');
+  const ov = document.getElementById('report-modal-overlay');
+  m.style.transform      = 'translateY(0)';
+  ov.style.pointerEvents = '';
+  ov.style.background    = '';
   if (!keepLocation && _pickMarker) {
     map.removeLayer(_pickMarker);
     _pickMarker = null;
@@ -1692,10 +1698,15 @@ function addReportMarker(report) {
 
 function buildReportPopup(report) {
   const statusLabels = { new:'חדש', inprogress:'בטיפול', done:'טופל' };
-  return `<div style="direction:rtl;font-family:Segoe UI,Arial,sans-serif;min-width:180px">
+  const photoHtml = report.photo
+    ? `<img src="${report.photo}" onclick="openLightbox('${report.id}')"
+         style="width:100%;max-height:140px;object-fit:cover;border-radius:6px;margin:6px 0;cursor:pointer;display:block;" />`
+    : '';
+  return `<div style="direction:rtl;font-family:Segoe UI,Arial,sans-serif;min-width:200px">
     <b style="font-size:0.9rem">⚠️ בעיה מדווחת</b>
     <div style="font-size:0.72rem;color:#aaa;margin:3px 0">${report.timestampHe}</div>
     <div style="font-size:0.8rem;margin-bottom:5px">${report.detail}</div>
+    ${photoHtml}
     <div style="font-size:0.72rem;color:#8899aa">מדווח: ${report.reporter}</div>
     <div style="margin-top:6px;font-size:0.75rem">סטטוס: <b>${statusLabels[report.status]||report.status}</b></div>
   </div>`;
