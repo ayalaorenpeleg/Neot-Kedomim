@@ -692,7 +692,24 @@
         <i class="fa-solid fa-upload"></i> בחר קובץ GeoJSON
       </label>
       <input type="file" id="geojson-file" accept=".geojson,.json" onchange="importGeoJSON(this)" />
-      <p style="font-size:0.72rem;color:#8899aa">תומך: .geojson, .json</p>
+
+      <div id="geojson-style-wrap" style="margin-top:4px;">
+        <label class="file-btn" for="geojson-style-file" id="geojson-style-label"
+               style="border-color:#a29bfe;color:#a29bfe;font-size:0.76rem;padding:6px 8px;">
+          <i class="fa-solid fa-palette"></i> קובץ סימבולוגיה (אופציונלי)
+        </label>
+        <input type="file" id="geojson-style-file" accept=".js" onchange="loadStyleFile(this)" />
+      </div>
+      <div id="geojson-style-status" style="display:none;font-size:0.72rem;padding:5px 8px;
+           background:#1a2040;border:1px solid #a29bfe;border-radius:5px;color:#a29bfe;margin-top:4px;">
+        <i class="fa-solid fa-palette"></i> <span id="geojson-style-name"></span>
+        <button onclick="clearStyleFile()" style="float:left;background:none;border:none;color:#ff6b6b;cursor:pointer;font-size:0.75rem;padding:0">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <p style="font-size:0.72rem;color:#8899aa;margin-top:4px">
+        תומך: .geojson, .json + קובץ סימבולוגיה .js
+      </p>
     </div>
 
     <div class="section-card">
@@ -1569,32 +1586,147 @@ function selectColor(color, el) {
 // ═══════════════════════════════════════════════════════
 //  IMPORT
 // ═══════════════════════════════════════════════════════
-function importGeoJSON(input) {
+// ── Style file state ────────────────────────────────────
+let _pendingStyleFn        = null;   // style(feature) → Leaflet style object
+let _pendingOnEachFeatureFn = null;  // onEachFeature(feature, layer)
+let _pendingStyleFileName  = '';
+
+function loadStyleFile(input) {
   const file = input.files[0];
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
     try {
+      const scriptText = e.target.result;
+
+      // Run the script inside a Function so its top-level declarations are local,
+      // then return whatever looks like a style function and an onEachFeature function.
+      const extractor = new Function(`
+        ${scriptText}
+
+        // Collect all top-level identifiers that are functions
+        const _out = {};
+        const _all = {};
+
+        // Grab every identifier declared above via a pattern scan
+        // Strategy: any function name ending with Style / style → styleFn
+        //           any function name containing OnEachFeature / onEachFeature → eachFn
+        const _declared = [];
+        try {
+          // Scan for 'function <name>' declarations
+          const _matches = \`${scriptText.replace(/`/g,'\\`')}\`.matchAll(/function\\s+([\\w$]+)/g);
+          for (const m of _matches) _declared.push(m[1]);
+        } catch(_){}
+
+        for (const _name of _declared) {
+          try {
+            const _v = eval(_name);
+            if (typeof _v !== 'function') continue;
+            if (!_out.styleFn  && /[Ss]tyle$/.test(_name))              _out.styleFn  = _v;
+            if (!_out.eachFn   && /[Oo]n[Ee]ach[Ff]eature/.test(_name)) _out.eachFn   = _v;
+          } catch(_) {}
+        }
+
+        // Also try well-known names as fallback
+        const _knownStyle = ['roadsStyle','style','featureStyle','getStyle','layerStyle'];
+        const _knownEach  = ['roadsOnEachFeature','onEachFeature','eachFeature','featureEach'];
+        for (const _n of _knownStyle) { try { if(!_out.styleFn && typeof eval(_n)==='function') _out.styleFn=eval(_n); } catch(_){} }
+        for (const _n of _knownEach)  { try { if(!_out.eachFn  && typeof eval(_n)==='function') _out.eachFn =eval(_n); } catch(_){} }
+
+        return _out;
+      `);
+
+      const extracted = extractor();
+
+      if (extracted.styleFn || extracted.eachFn) {
+        _pendingStyleFn         = extracted.styleFn || null;
+        _pendingOnEachFeatureFn = extracted.eachFn  || null;
+        _pendingStyleFileName   = file.name;
+        document.getElementById('geojson-style-name').textContent     = file.name;
+        document.getElementById('geojson-style-status').style.display = 'block';
+        document.getElementById('geojson-style-label').style.color       = '#52b788';
+        document.getElementById('geojson-style-label').style.borderColor = '#52b788';
+        toast('קובץ סימבולוגיה נטען: ' + file.name);
+      } else {
+        toast('לא נמצאו פונקציות סגנון בקובץ');
+      }
+    } catch(err) {
+      toast('שגיאה בקריאת קובץ הסימבולוגיה: ' + err.message);
+      console.error(err);
+    }
+  };
+  reader.readAsText(file, 'utf-8');
+  input.value = '';
+}
+
+function clearStyleFile() {
+  _pendingStyleFn         = null;
+  _pendingOnEachFeatureFn = null;
+  _pendingStyleFileName   = '';
+  document.getElementById('geojson-style-status').style.display = 'none';
+  document.getElementById('geojson-style-file').value = '';
+  document.getElementById('geojson-style-label').style.color       = '#a29bfe';
+  document.getElementById('geojson-style-label').style.borderColor = '#a29bfe';
+  toast('קובץ הסימבולוגיה הוסר');
+}
+
+function importGeoJSON(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  // Capture the style functions at load time (user may clear them later)
+  const styleFn        = _pendingStyleFn;
+  const onEachFeatureFn = _pendingOnEachFeatureFn;
+  const hasStyle       = !!styleFn;
+  const defaultColor   = LAYER_COLORS[layerColorIdx % LAYER_COLORS.length];
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
       const data = JSON.parse(e.target.result);
+
+      // Build default onEachFeature (popup with all properties)
+      const defaultOnEach = (feature, lyr) => {
+        if (feature.properties) {
+          const props = Object.entries(feature.properties)
+            .map(([k,v]) => `<b>${k}:</b> ${v ?? '–'}`).join('<br/>');
+          lyr.bindPopup(`<div dir="auto" style="max-width:260px;font-size:0.8rem">${props}</div>`);
+        }
+      };
+
       const layer = L.geoJSON(data, {
-        style: { color: LAYER_COLORS[layerColorIdx % LAYER_COLORS.length], weight: 2, fillOpacity: 0.15 },
-        onEachFeature: (feature, layer) => {
-          if (feature.properties) {
-            const props = Object.entries(feature.properties)
-              .map(([k,v]) => `<b>${k}:</b> ${v}`).join('<br/>');
-            layer.bindPopup(`<div dir="auto" style="max-width:250px;font-size:0.8rem">${props}</div>`);
+        // Use style from file if available, otherwise default
+        style: hasStyle
+          ? feature => {
+              try { return styleFn(feature); }
+              catch(_) { return { color: defaultColor, weight: 2, fillOpacity: 0.15 }; }
+            }
+          : { color: defaultColor, weight: 2, fillOpacity: 0.15 },
+
+        // Combine style file's onEachFeature with default popup
+        onEachFeature: (feature, lyr) => {
+          defaultOnEach(feature, lyr);
+          if (onEachFeatureFn) {
+            try { onEachFeatureFn(feature, lyr); } catch(_) {}
           }
         },
+
         pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
-          radius: 7, fillColor: LAYER_COLORS[layerColorIdx % LAYER_COLORS.length],
+          radius: 7,
+          fillColor: hasStyle ? (styleFn(feature)?.color || defaultColor) : defaultColor,
           color: '#fff', weight: 1, fillOpacity: 0.9
         })
       });
-      addImportedLayer(layer, file.name);
-      toast('GeoJSON נטען: ' + file.name);
+
+      const layerLabel = hasStyle
+        ? `${file.name} 🎨`
+        : file.name;
+
+      addImportedLayer(layer, layerLabel);
+      toast('GeoJSON נטען' + (hasStyle ? ' עם סימבולוגיה מותאמת ✓' : '') + ': ' + file.name);
     } catch(err) { toast('שגיאה בקריאת הקובץ: ' + err.message); }
   };
-  reader.readAsText(file);
+  reader.readAsText(file, 'utf-8');
   input.value = '';
 }
 
