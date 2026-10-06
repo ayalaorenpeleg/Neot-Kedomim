@@ -15,6 +15,8 @@ while ($true) {
             '.css'  { 'text/css' }
             '.png'  { 'image/png' }
             '.json' { 'application/json' }
+            '.webp' { 'image/webp' }
+            '.zip'  { 'application/zip' }
             default { 'application/octet-stream' }
         }
         $bytes = [System.IO.File]::ReadAllBytes($file)

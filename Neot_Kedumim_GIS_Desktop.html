@@ -19,6 +19,9 @@
   <!-- Shapefile (local) -->
   <script src="lib/shp.js"></script>
 
+  <!-- fflate (local) — לקריאת קובצי סטייל (QML) מתוך ה-ZIP -->
+  <script src="lib/fflate.min.js"></script>
+
   <!-- Proj4 (local) -->
   <script src="lib/proj4.js"></script>
 
@@ -616,6 +619,23 @@
     @media (max-width: 600px) {
       #sidebar { width: 280px; min-width: 280px; }
     }
+
+    /* ── QML style labels (שכבות עם סטייל QGIS) ─────────── */
+    .leaflet-tooltip-qml {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      padding: 0 !important;
+      white-space: nowrap;
+    }
+    .leaflet-tooltip-qml::before { display: none !important; }
+
+    .shp-lib-item {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.8rem; padding: 4px 0;
+    }
+    .shp-lib-item label { cursor: pointer; flex: 1; }
+    .shp-lib-item input[type="checkbox"] { accent-color: #4fc3f7; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -651,6 +671,14 @@
 
   <!-- ── Tab: Layers ──────────────────────────────────── -->
   <div id="tab-layers" class="tab-panel active">
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-map"></i> מפות רקע מעוגנות</div>
+      <div id="raster-library-list"></div>
+    </div>
+    <div class="section-card">
+      <div class="section-title"><i class="fa-solid fa-database"></i> ספריית שכבות SHP</div>
+      <ul id="shp-library-list" style="list-style:none;padding:0;margin:0;"></ul>
+    </div>
     <div class="section-card">
       <div class="section-title"><i class="fa-solid fa-layer-group"></i> שכבות פעילות</div>
       <ul id="layer-list"></ul>
@@ -947,8 +975,8 @@
   </div>
 
   <div id="coords-bar">
-    <span id="coords-lat">Lat: –</span>
-    <span id="coords-lng">Lng: –</span>
+    <span id="coords-lat">X: –</span>
+    <span id="coords-lng">Y: –</span>
     <span id="coords-zoom">Zoom: –</span>
     <span id="measure-display"></span>
   </div>
@@ -1150,11 +1178,13 @@ function initMap() {
 
   // Coordinates bar
   map.on('mousemove', e => {
-    document.getElementById('coords-lat').textContent = 'Lat: ' + e.latlng.lat.toFixed(5);
-    document.getElementById('coords-lng').textContent = 'Lng: ' + e.latlng.lng.toFixed(5);
+    const itmXY = toITM(e.latlng.lat, e.latlng.lng);
+    document.getElementById('coords-lat').textContent = 'X: ' + itmXY.x;
+    document.getElementById('coords-lng').textContent = 'Y: ' + itmXY.y;
   });
   map.on('zoomend', () => {
     document.getElementById('coords-zoom').textContent = 'Zoom: ' + map.getZoom();
+    updateRadiusScaledLabels();
   });
   document.getElementById('coords-zoom').textContent = 'Zoom: ' + map.getZoom();
 
@@ -1263,9 +1293,36 @@ function setBaseLayer(id) {
 let layerColorIdx = 0;
 const LAYER_COLORS = ['#4fc3f7','#ffa94d','#ff6b6b','#a29bfe','#fd79a8','#ffe066','#52b788'];
 
-function addImportedLayer(layer, name) {
-  const id    = 'layer_' + Date.now();
-  const color = LAYER_COLORS[layerColorIdx++ % LAYER_COLORS.length];
+// באתר RTL, Leaflet ל-tooltip עם direction:'center' לא ממרכז נכון על ציר ה-X
+// (השארית תלויה ברוחב התווית עצמה) – מודדים את הרוחב האמיתי שנרנדר ומתקנים ב-offset
+function fixTooltipCentering(lyr) {
+  const tt = lyr.getTooltip();
+  if (!tt || !tt._container) return;
+  const w = tt._container.offsetWidth;
+  if (!w) return;
+  tt.options.offset = L.point(w, 0);
+  if (lyr.isTooltipOpen()) { lyr.closeTooltip(); lyr.openTooltip(); }
+}
+
+// תוויות מספר על נקודות עם רדיוס אמיתי (MapUnit) – מוצגות רק כשמזום מספיק שהמספר נכנס בעיגול
+let radiusScaledLabels = [];
+const LABEL_MIN_RADIUS_PX = 13;
+function updateRadiusScaledLabels() {
+  if (!radiusScaledLabels.length) return;
+  const zoom = map.getZoom();
+  const centerLat = map.getCenter().lat;
+  const metersPerPixel = 156543.03392 * Math.cos(centerLat * Math.PI / 180) / Math.pow(2, zoom);
+  radiusScaledLabels = radiusScaledLabels.filter(({ lyr }) => map.hasLayer(lyr));
+  radiusScaledLabels.forEach(({ lyr, radiusMeters }) => {
+    const pixelRadius = radiusMeters / metersPerPixel;
+    if (pixelRadius >= LABEL_MIN_RADIUS_PX) { if (!lyr.isTooltipOpen()) lyr.openTooltip(); }
+    else { if (lyr.isTooltipOpen()) lyr.closeTooltip(); }
+  });
+}
+
+function addImportedLayer(layer, name, colorOverride) {
+  const id    = 'layer_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  const color = colorOverride || LAYER_COLORS[layerColorIdx++ % LAYER_COLORS.length];
   importedLayers[id] = { layer, name, color, visible: true };
 
   // Attach identify click handler to every sub-layer
@@ -1462,7 +1519,7 @@ function buildPopupHtml(poi) {
       <div style="font-size:0.75rem;color:#888;margin-bottom:6px">${getCatLabel(poi.cat)}</div>
       ${poi.desc ? `<div style="font-size:0.82rem;margin-bottom:6px">${poi.desc}</div>` : ''}
       <div style="font-size:0.72rem;color:#aaa;margin-bottom:8px">
-        📍 ${poi.lat.toFixed(5)}, ${poi.lng.toFixed(5)}
+        📍 ${fmtITM(poi.lat, poi.lng)}
       </div>
       ${poi.link ? `<a href="${poi.link}" target="_blank" style="font-size:0.78rem;color:#4fc3f7">🔗 פתח קישור</a><br/>` : ''}
       <div style="display:flex;gap:6px;margin-top:8px">
@@ -1770,7 +1827,7 @@ function importCSV(input) {
         const m    = L.circleMarker([lat, lng], {
           radius: 7, fillColor: LAYER_COLORS[layerColorIdx % LAYER_COLORS.length],
           color: '#fff', weight: 1.5, fillOpacity: 0.9
-        }).bindPopup(`<b>${name}</b><br/>${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+        }).bindPopup(`<b>${name}</b><br/>${fmtITM(lat, lng)}`);
         markers.push(m);
       }
 
@@ -1904,7 +1961,7 @@ function showIdentifyResult(feature, layerName, originalLayer) {
     let c = '';
     try {
       const b = originalLayer.getBounds ? originalLayer.getBounds().getCenter() : null;
-      if (b) c = b.lat.toFixed(5) + ', ' + b.lng.toFixed(5);
+      if (b) c = fmtITM(b.lat, b.lng);
     } catch(e) {}
     document.getElementById('identify-geom-coords').textContent = c ? '📍 ' + c : '';
   } else {
@@ -2042,8 +2099,9 @@ function exportPOIsGeoJSON() {
 
 function exportPOIsCSV() {
   if (pois.length === 0) { toast('אין נקודות לייצוא'); return; }
-  const rows = ['name,category,description,lat,lng,link'].concat(
-    pois.map(p => `"${p.name}","${getCatLabel(p.cat)}","${p.desc}","${p.lat}","${p.lng}","${p.link||''}"`)
+  const rows = ['name,category,description,itm_x,itm_y,link'].concat(
+    pois.map(p => { const { x, y } = toITM(p.lat, p.lng);
+      return `"${p.name}","${getCatLabel(p.cat)}","${p.desc}","${x}","${y}","${p.link||''}"`; })
   );
   downloadBlob(rows.join('\n'), 'neot-kdomim-poi.csv', 'text/csv;charset=utf-8');
   toast('CSV יוצא');
@@ -2118,6 +2176,33 @@ function setupProj4() {
     '+units=m +no_defs');
 }
 
+// כיול מקומי אמפירי: ל-EPSG:2039 (D_Israel) אין קובץ Grid מדויק זמין ב-proj4js,
+// רק קירוב Helmert ל-7 פרמטרים. נמדדה שארית קבועה (~27.2 מ' מזרחה, ~10 מ' דרומה)
+// באזור נאות קדומים, מבוססת על שתי נקודות ייחוס מדויקות מ-QGIS (EPSG:2039 מול
+// EPSG:4326 לאותה נקודה בפועל) במרחק של כ-570 מ' זו מזו – ותואמות זו לזו לכ-20 ס"מ,
+// כלומר מדובר בהיסט קבוע (Translation) ולא בשגיאת קנה-מידה/סיבוב.
+const ITM_LOCAL_CALIBRATION = { dLat: 0.0000900114, dLng: -0.0002891279 };
+
+// ITM (רשת ישראל החדשה) → WGS84 (lat/lng), עם הכיול המקומי
+function itmToWgs84(x, y) {
+  const r = proj4('EPSG:2039', 'EPSG:4326', [x, y]);
+  return [r[0] + ITM_LOCAL_CALIBRATION.dLng, r[1] + ITM_LOCAL_CALIBRATION.dLat];
+}
+
+// WGS84 (lat/lng) → ITM / רשת ישראל החדשה (EPSG:2039, מטרים)
+function toITM(lat, lng) {
+  if (typeof proj4 === 'undefined') return { x: lng, y: lat };
+  try {
+    const [x, y] = proj4('EPSG:4326', 'EPSG:2039',
+      [lng - ITM_LOCAL_CALIBRATION.dLng, lat - ITM_LOCAL_CALIBRATION.dLat]);
+    return { x: Math.round(x), y: Math.round(y) };
+  } catch (_) { return { x: lng, y: lat }; }
+}
+function fmtITM(lat, lng) {
+  const { x, y } = toITM(lat, lng);
+  return `${x}, ${y}`;
+}
+
 // ═══════════════════════════════════════════════════════
 //  SHP IMPORT (shpjs – ZIP containing .shp/.dbf/.prj)
 // ═══════════════════════════════════════════════════════
@@ -2127,7 +2212,7 @@ function reprojectGeoJSON(fc) {
   const reprojectCoord = (coord) => {
     if (!Array.isArray(coord) || coord.length < 2) return coord;
     if (typeof coord[0] === 'number' && Math.abs(coord[0]) > 1000) {
-      try { const r = proj4('EPSG:2039','EPSG:4326',[coord[0],coord[1]]); return [r[0],r[1]]; } catch(_){}
+      try { return itmToWgs84(coord[0], coord[1]); } catch(_){}
     }
     return coord;
   };
@@ -2143,42 +2228,398 @@ function reprojectGeoJSON(fc) {
   return { ...fc, features: (fc.features||[]).map(f => ({ ...f, geometry: reprojectGeom(f.geometry) })) };
 }
 
+// ═══════════════════════════════════════════════════════
+//  QML (QGIS Style) – קריאת סטייל מתוך ה-ZIP והחלתו על השכבה
+// ═══════════════════════════════════════════════════════
+// DBF מגביל שמות שדות ל-10 בייטים; שם עברי (2 בייטים לאות) שחורג מהמכסה
+// נחתך באמצע תו ומשאיר "תו החלפה" (U+FFFD) שקוף בסוף השם – מנקים אותו לתצוגה
+function cleanDBFFieldName(key) {
+  return String(key).replace(/�+$/g, '').trim();
+}
+
+function extractQMLFromZip(buffer) {
+  if (typeof fflate === 'undefined') return null;
+  try {
+    const files   = fflate.unzipSync(new Uint8Array(buffer));
+    const qmlName = Object.keys(files).find(n => n.toLowerCase().endsWith('.qml'));
+    if (!qmlName) return null;
+    return new TextDecoder('utf-8').decode(files[qmlName]);
+  } catch (_) { return null; }
+}
+
+function qmlColor(str) {
+  if (!str) return null;
+  const parts = str.split(',');
+  const r = parseInt(parts[0], 10), g = parseInt(parts[1], 10), b = parseInt(parts[2], 10);
+  if ([r, g, b].some(isNaN)) return null;
+  const a = parts.length > 3 && !isNaN(parseInt(parts[3], 10)) ? parseInt(parts[3], 10) / 255 : 1;
+  return { css: `rgba(${r},${g},${b},${a.toFixed(3)})`, alpha: a };
+}
+
+function qmlLineDash(styleName) {
+  switch (styleName) {
+    case 'dash':     return '6,4';
+    case 'dot':      return '1,3';
+    case 'dash dot': return '6,3,1,3';
+    default:         return null; // solid / no pen
+  }
+}
+
+function qmlOptions(layerEl) {
+  const opts = {};
+  layerEl.querySelectorAll(':scope > Option > Option').forEach(o => {
+    const name = o.getAttribute('name');
+    if (name) opts[name] = o.getAttribute('value');
+  });
+  return opts;
+}
+
+// ממיר סמל QGIS יחיד (line/fill/marker) לאובייקט סטייל של Leaflet
+function parseQMLSymbol(symbolEl) {
+  const layerEl = symbolEl.querySelector(':scope > layer');
+  if (!layerEl) return null;
+  const cls  = layerEl.getAttribute('class');
+  const opts = qmlOptions(layerEl);
+  const style = {};
+
+  if (cls === 'SimpleLine') {
+    const c = qmlColor(opts.line_color);
+    style.color      = c ? c.css : '#3388ff';
+    style.opacity    = c ? c.alpha : 1;
+    style.weight     = Math.max(1, Math.round(parseFloat(opts.line_width || 1) * 4));
+    style.dashArray  = qmlLineDash(opts.line_style);
+    style.fill       = false;
+  } else if (cls === 'SimpleFill') {
+    const fc = qmlColor(opts.color);
+    const oc = qmlColor(opts.outline_color);
+    style.fillColor   = fc ? fc.css : '#3388ff';
+    style.fillOpacity = fc ? fc.alpha : 0.3;
+    style.color       = oc ? oc.css : (fc ? fc.css : '#3388ff');
+    style.opacity     = oc ? oc.alpha : 1;
+    style.weight      = Math.max(1, Math.round(parseFloat(opts.outline_width || 0.2) * 4));
+    style.dashArray   = qmlLineDash(opts.outline_style);
+    style.fill        = true;
+  } else if (cls === 'SimpleMarker') {
+    const fc = qmlColor(opts.color);
+    const oc = qmlColor(opts.outline_color);
+    style.fillColor   = fc ? fc.css : '#3388ff';
+    style.fillOpacity = fc ? fc.alpha : 0.9;
+    style.color       = oc ? oc.css : '#333';
+    style.opacity     = oc ? oc.alpha : 1;
+    style.weight      = Math.max(1, Math.round(parseFloat(opts.outline_width || 0.2) * 4));
+    style.isMarker    = true;
+    // ב-QGIS גודל סמל יכול להימדד במ"מ (קבוע על המסך) או ב"יחידות מפה"
+    // (גודל אמיתי בשטח, קטן/גדל עם הזום) – size_unit="MapUnit" מציין את המקרה השני
+    if (opts.size_unit === 'MapUnit') {
+      style.useMeters   = true;
+      style.radiusMeters = Math.max(0.1, parseFloat(opts.size || 2) / 2);
+    } else {
+      style.radius = Math.max(4, Math.round(parseFloat(opts.size || 2) * 3));
+    }
+  } else {
+    return null; // סוג סמל שאינו נתמך (SVG marker, gradient וכו') – ייפול לברירת מחדל
+  }
+  return style;
+}
+
+function qmlPickCategory(props, attr, categories) {
+  const raw = props ? props[attr] : undefined;
+  const key = (raw === undefined || raw === null || raw === '') ? 'NULL' : String(raw);
+  return categories.find(c => c.value === key) || categories.find(c => c.value === 'NULL');
+}
+
+function parseQMLLabeling(qgisEl) {
+  if (qgisEl.getAttribute('labelsEnabled') !== '1') return null;
+  const labeling = qgisEl.querySelector(':scope > labeling[type="simple"]');
+  if (!labeling) return null;
+  const ts = labeling.querySelector('text-style');
+  if (!ts) return null;
+  const fieldName = ts.getAttribute('fieldName');
+  if (!fieldName || ts.getAttribute('isExpression') === '1') return null;
+  const color    = qmlColor(ts.getAttribute('textColor'));
+  const buffer   = ts.querySelector('text-buffer');
+  const haloOn   = buffer && buffer.getAttribute('bufferDraw') === '1';
+  const halo     = haloOn ? qmlColor(buffer.getAttribute('bufferColor')) : null;
+  return {
+    // שם השדה ב-QML עלול לשאת את אותה שארית חתוכה (U+FFFD) שהשם עצמו ב-DBF סבל ממנה;
+    // מנקים אותה כאן כדי שהחיפוש בפועל בתוך feature.properties[fieldName] יצליח להתאים.
+    fieldName: cleanDBFFieldName(fieldName),
+    color: color ? color.css : '#333',
+    fontSize: parseFloat(ts.getAttribute('fontSize')) || 10,
+    fontFamily: ts.getAttribute('fontFamily') || 'sans-serif',
+    bold: ts.getAttribute('fontWeight') === '700' || ts.getAttribute('namedStyle') === 'Bold',
+    haloColor: halo ? halo.css : null
+  };
+}
+
+// מנתח מחרוזת XML של קובץ QML ומחזיר { getStyle(props), labeling, swatchColor }
+function parseQML(text) {
+  try {
+    const doc = new DOMParser().parseFromString(text, 'text/xml');
+    if (doc.querySelector('parsererror')) return null;
+    const qgisEl = doc.querySelector('qgis');
+    if (!qgisEl) return null;
+    const rendererEl = qgisEl.querySelector(':scope > renderer-v2');
+    if (!rendererEl) return null;
+    const type = rendererEl.getAttribute('type');
+
+    let getStyle, swatchColor = null;
+    if (type === 'singleSymbol') {
+      const symbolEl = rendererEl.querySelector(':scope > symbols > symbol');
+      const style = symbolEl ? parseQMLSymbol(symbolEl) : null;
+      if (!style) return null;
+      swatchColor = style.fillColor || style.color;
+      getStyle = () => style;
+    } else if (type === 'categorizedSymbol') {
+      const attr = rendererEl.getAttribute('attr');
+      const cats = [...rendererEl.querySelectorAll(':scope > categories > category')].map(c => ({
+        value: c.getAttribute('value'), symbol: c.getAttribute('symbol')
+      }));
+      if (!attr || !cats.length) return null;
+      const symbolStyles = {};
+      rendererEl.querySelectorAll(':scope > symbols > symbol').forEach(s => {
+        symbolStyles[s.getAttribute('name')] = parseQMLSymbol(s);
+      });
+      const firstStyle = symbolStyles[cats[0].symbol];
+      swatchColor = firstStyle ? (firstStyle.fillColor || firstStyle.color) : null;
+      getStyle = (props) => {
+        const cat = qmlPickCategory(props, attr, cats);
+        return (cat && symbolStyles[cat.symbol]) || { color: '#999', weight: 2, fillColor: '#999', fillOpacity: 0.15 };
+      };
+    } else {
+      return null; // graduated / rule-based – עדיין לא נתמך, ייפול לצבע ברירת מחדל
+    }
+
+    return { getStyle, labeling: parseQMLLabeling(qgisEl), swatchColor };
+  } catch (_) { return null; }
+}
+
+let qmlLabelStyleCounter = 0;
+function injectQMLLabelStyle(labeling) {
+  const cls = 'qml-label-' + (qmlLabelStyleCounter++);
+  const s = document.createElement('style');
+  const halo = labeling.haloColor;
+  s.textContent = `.${cls} { color:${labeling.color}; font-size:${labeling.fontSize}px; ` +
+    `font-family:${labeling.fontFamily},sans-serif; font-weight:${labeling.bold ? 700 : 400}; ` +
+    (halo ? `text-shadow:-1px -1px 0 ${halo},1px -1px 0 ${halo},-1px 1px 0 ${halo},1px 1px 0 ${halo};` : '') + `}`;
+  document.head.appendChild(s);
+  return cls;
+}
+
+// בונה שכבת Leaflet מ-GeoJSON, עם/בלי סטייל QML, ומוסיפה אותה למפה
+function buildSHPLayer(collections, baseName, qmlInfo) {
+  const labelClass = qmlInfo && qmlInfo.labeling ? injectQMLLabelStyle(qmlInfo.labeling) : null;
+  let total = 0;
+  const ids = [];
+  const labeledMarkers = [];
+  collections.forEach((fc, idx) => {
+    const fallbackColor = LAYER_COLORS[layerColorIdx % LAYER_COLORS.length];
+    const swatch = qmlInfo ? (qmlInfo.swatchColor || fallbackColor) : fallbackColor;
+    const layer = L.geoJSON(fc, {
+      style: (feature) => qmlInfo
+        ? qmlInfo.getStyle(feature.properties || {})
+        : { color: fallbackColor, weight: 2, fillColor: fallbackColor, fillOpacity: 0.15 },
+      onEachFeature: (feature, lyr) => {
+        if (feature.properties) {
+          const rows = Object.entries(feature.properties)
+            .filter(([, v]) => v !== null && v !== undefined)
+            .map(([k, v]) => `<b>${cleanDBFFieldName(k)}:</b> ${v}`).join('<br/>');
+          if (rows) lyr.bindPopup(`<div dir="auto" style="max-width:280px;font-size:0.8rem">${rows}</div>`);
+        }
+        if (labelClass && qmlInfo.labeling) {
+          const val = feature.properties ? feature.properties[qmlInfo.labeling.fieldName] : null;
+          if (val !== undefined && val !== null && String(val).trim() !== '') {
+            lyr.bindTooltip(String(val), { permanent: true, direction: 'center', className: 'leaflet-tooltip-qml ' + labelClass });
+            labeledMarkers.push(lyr);
+            const st = qmlInfo.getStyle(feature.properties || {});
+            if (st && st.useMeters) radiusScaledLabels.push({ lyr, radiusMeters: st.radiusMeters });
+          }
+        }
+      },
+      pointToLayer: (feature, latlng) => {
+        const st = qmlInfo ? qmlInfo.getStyle(feature.properties || {}) : null;
+        if (st && st.useMeters) {
+          return L.circle(latlng, {
+            radius: st.radiusMeters,
+            fillColor: st.fillColor, color: st.color, weight: st.weight,
+            fillOpacity: st.fillOpacity != null ? st.fillOpacity : 0.9
+          });
+        }
+        return L.circleMarker(latlng, {
+          radius: st ? st.radius : 7,
+          fillColor: st ? st.fillColor : LAYER_COLORS[layerColorIdx % LAYER_COLORS.length],
+          color: st ? st.color : '#fff',
+          weight: st ? st.weight : 1.5,
+          fillOpacity: st && st.fillOpacity != null ? st.fillOpacity : 0.9
+        });
+      }
+    });
+    const name = baseName + (collections.length > 1 ? ` (${idx + 1})` : '');
+    ids.push(addImportedLayer(layer, name, qmlInfo ? swatch : undefined));
+    total += fc.features ? fc.features.length : 0;
+  });
+  labeledMarkers.forEach(fixTooltipCentering);
+  updateRadiusScaledLabels();
+  return { ids, total };
+}
+
+// shp() המובנה ב-shpjs מבצע רה-פרויקציה עצמאית לפי קובץ ה-.prj, אבל כשה-.prj
+// לא כולל את פרמטרי הסטת הדאטום (כמו במקרה של רשת ישראל הישנה/D_Israel) הוא
+// "שוכח" את ההיסט הזה ומחזיר קואורדינטות שגויות בכ-100 מ'. לכן אנחנו קוראים את
+// הגיאומטריה הגולמית (ITM, לא-מפוריקטת) ישירות, ומריעים אותה בעצמנו עם ה-proj4
+// המכויל נכון של EPSG:2039 (ראו setupProj4/toITM).
+async function loadSHPFromBuffer(buffer, baseName) {
+  const files = fflate.unzipSync(new Uint8Array(buffer));
+  const toAB = (u8) => u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+  const shpNames = Object.keys(files).filter(n => n.toLowerCase().endsWith('.shp'));
+  if (!shpNames.length) throw new Error('לא נמצא קובץ .shp בתוך ה-ZIP');
+  const collections = shpNames.map(shpName => {
+    const base    = shpName.replace(/\.shp$/i, '');
+    const dbfName = Object.keys(files).find(n => n.toLowerCase() === (base + '.dbf').toLowerCase());
+    const rawGeom = shp.parseShp(toAB(files[shpName]));
+    const dbfRows = dbfName ? shp.parseDbf(toAB(files[dbfName])) : null;
+    const fc      = dbfRows ? shp.combine([rawGeom, dbfRows]) : rawGeom;
+    return reprojectGeoJSON(fc);
+  });
+  const qmlText = extractQMLFromZip(buffer);
+  const qmlInfo = qmlText ? parseQML(qmlText) : null;
+  return buildSHPLayer(collections, baseName, qmlInfo);
+}
+
 async function importSHP(input) {
   const file = input.files[0];
   if (!file) return;
   if (typeof shp === 'undefined') { toast('ספריית shpjs לא נטענה, בדוק חיבור אינטרנט'); return; }
   toast('טוען Shapefile...');
   try {
-    const buffer  = await file.arrayBuffer();
-    const geojson = await shp(buffer);
-    const collections = (Array.isArray(geojson) ? geojson : [geojson]).map(reprojectGeoJSON);
-    let total = 0;
-    collections.forEach((fc, idx) => {
-      const color = LAYER_COLORS[layerColorIdx % LAYER_COLORS.length];
-      const layer = L.geoJSON(fc, {
-        style: () => ({ color, weight: 2, fillColor: color, fillOpacity: 0.15 }),
-        onEachFeature: (feature, lyr) => {
-          if (feature.properties) {
-            const rows = Object.entries(feature.properties)
-              .filter(([, v]) => v !== null && v !== undefined)
-              .map(([k, v]) => `<b>${k}:</b> ${v}`).join('<br/>');
-            if (rows) lyr.bindPopup(`<div dir="auto" style="max-width:280px;font-size:0.8rem">${rows}</div>`);
-          }
-        },
-        pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
-          radius: 7, fillColor: LAYER_COLORS[layerColorIdx % LAYER_COLORS.length],
-          color: '#fff', weight: 1.5, fillOpacity: 0.9
-        })
-      });
-      const name = file.name.replace(/\.zip$/i, '') + (collections.length > 1 ? ` (${idx + 1})` : '');
-      addImportedLayer(layer, name);
-      total += fc.features ? fc.features.length : 0;
-    });
+    const buffer = await file.arrayBuffer();
+    const { total } = await loadSHPFromBuffer(buffer, file.name.replace(/\.zip$/i, ''));
     toast(`SHP נטען: ${total} אובייקטים`);
   } catch (err) {
     toast('שגיאה ב-Shapefile: ' + err.message);
   }
   input.value = '';
+}
+
+// ═══════════════════════════════════════════════════════
+//  ספריית שכבות SHP קבועה (SHP Layers/) – משותפת לדסקטופ ולמובייל
+// ═══════════════════════════════════════════════════════
+const SHP_LIBRARY = [
+  { name: 'בריכות', file: 'SHP Layers/בריכות.zip' },
+  { name: 'גבול המיפוי', file: 'SHP Layers/גבול המיפוי.zip' },
+  { name: 'דרכים מהמיפוי ב-2023', file: 'SHP Layers/דרכים מהמיפוי ב2023.zip' },
+  { name: 'מבנים מהמיפוי ב-2023', file: 'SHP Layers/מבנים מהמיפוי ב2023.zip' },
+  { name: 'נקודות עניין מהמפה התיירותית (זמני)', file: 'SHP Layers/נקודות עניין מהמפה התיירותית_זמני.zip' },
+  { name: 'תגיות לאיזורים חשובים', file: 'SHP Layers/תגיות לאיזורים חשובים.zip' },
+  { name: 'תחנות ניווט (זמני)', file: 'SHP Layers/תחנות ניווט_זמני.zip' }
+];
+const shpLibraryLoaded = {}; // file -> [layerIds]
+
+// כל שכבות הספרייה נטענות כברירת מחדל. התצוגה מתמקדת בשמורה ולא בשכבה האחרונה שנטענה.
+async function loadDefaultSHPLayers() {
+  const center = map.getCenter(), zoom = map.getZoom();
+  _shpLibAutoLoad = true;
+  await Promise.all(SHP_LIBRARY.map((_, i) => toggleSHPLibraryLayer(i, true)));
+  _shpLibAutoLoad = false;
+  map.setView(center, zoom);
+}
+let _shpLibAutoLoad = false;
+
+function renderSHPLibrary() {
+  const ul = document.getElementById('shp-library-list');
+  if (!ul) return;
+  ul.innerHTML = SHP_LIBRARY.map((item, i) => `
+    <li class="shp-lib-item">
+      <input type="checkbox" id="shplib-${i}" checked onchange="toggleSHPLibraryLayer(${i}, this.checked)" />
+      <label for="shplib-${i}">${item.name}</label>
+    </li>`).join('');
+}
+
+async function toggleSHPLibraryLayer(i, checked) {
+  const item = SHP_LIBRARY[i];
+  if (!checked) {
+    (shpLibraryLoaded[item.file] || []).forEach(removeLayer);
+    delete shpLibraryLoaded[item.file];
+    return;
+  }
+  if (!_shpLibAutoLoad) toast('טוען ' + item.name + '...');
+  try {
+    const res = await fetch(encodeURI(item.file));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const buffer = await res.arrayBuffer();
+    const { ids } = await loadSHPFromBuffer(buffer, item.name);
+    shpLibraryLoaded[item.file] = ids;
+    if (!_shpLibAutoLoad) toast(item.name + ' נטען');
+  } catch (err) {
+    toast('שגיאה בטעינת ' + item.name + ': ' + err.message);
+    const cb = document.getElementById('shplib-' + i);
+    if (cb) cb.checked = false;
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  ספריית מפות רקע מעוגנות (Raster Layers/) – משותפת לדסקטופ ולמובייל
+//  להוספת מפה: מעבירים ל-EPSG:3857, שומרים כ-WebP/PNG, ומוסיפים שורה עם
+//  גבולות [[דרום, מערב], [צפון, מזרח]] במעלות WGS84.
+// ═══════════════════════════════════════════════════════
+const RASTER_LIBRARY = [
+  { name: 'מפת ניווט 1:5,000',  file: 'Raster Layers/מפת ניווט 5000_1.webp',
+    bounds: [[31.9425562, 34.9670898], [31.9560437, 34.9878587]] },
+  { name: 'מפת תיירות 1:7,500', file: 'Raster Layers/מפת תיירות 7500_1.webp',
+    bounds: [[31.9371517, 34.9638369], [31.9608691, 34.9986548]] }
+];
+const rasterLibraryLayers = {}; // index -> L.imageOverlay
+
+function ensureRasterPane() {
+  if (map && !map.getPane('rasterMaps')) {
+    map.createPane('rasterMaps');
+    map.getPane('rasterMaps').style.zIndex = 250; // מעל מפת הבסיס, מתחת לשכבות הווקטוריות
+  }
+}
+
+function renderRasterLibrary() {
+  const box = document.getElementById('raster-library-list');
+  if (!box) return;
+  box.innerHTML = RASTER_LIBRARY.map((item, i) => `
+    <div class="shp-lib-item" style="flex-wrap:wrap">
+      <input type="checkbox" id="rasterlib-${i}" onchange="toggleRasterLibraryLayer(${i}, this.checked)" />
+      <label for="rasterlib-${i}">${item.name}</label>
+      <input type="range" id="rasterop-${i}" min="0.1" max="1" step="0.05" value="0.85" title="שקיפות"
+             style="width:100%;margin:4px 0 2px;display:none" oninput="setRasterOpacity(${i}, this.value)" />
+    </div>`).join('');
+}
+
+function toggleRasterLibraryLayer(i, checked) {
+  const item   = RASTER_LIBRARY[i];
+  const slider = document.getElementById('rasterop-' + i);
+  ensureRasterPane();
+  if (!checked) {
+    if (rasterLibraryLayers[i]) map.removeLayer(rasterLibraryLayers[i]);
+    if (slider) slider.style.display = 'none';
+    return;
+  }
+  if (!rasterLibraryLayers[i]) {
+    toast('טוען ' + item.name + '...');
+    rasterLibraryLayers[i] = L.imageOverlay(encodeURI(item.file), item.bounds, {
+      pane: 'rasterMaps', opacity: slider ? parseFloat(slider.value) : 0.85, interactive: false
+    });
+    rasterLibraryLayers[i].on('load',  () => toast(item.name + ' נטענה'));
+    rasterLibraryLayers[i].on('error', () => {
+      toast('שגיאה בטעינת ' + item.name);
+      const cb = document.getElementById('rasterlib-' + i);
+      if (cb) cb.checked = false;
+      if (slider) slider.style.display = 'none';
+      map.removeLayer(rasterLibraryLayers[i]);
+      delete rasterLibraryLayers[i];
+    });
+  }
+  rasterLibraryLayers[i].addTo(map);
+  if (slider) slider.style.display = 'block';
+}
+
+function setRasterOpacity(i, v) {
+  if (rasterLibraryLayers[i]) rasterLibraryLayers[i].setOpacity(parseFloat(v));
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2252,7 +2693,7 @@ function parseDXFToGeoJSON(text, crsMode) {
 
   const toCoord = (x, y) => {
     if (useITM && typeof proj4 !== 'undefined') {
-      try { return proj4('EPSG:2039', 'EPSG:4326', [x, y]); } catch (_) {}
+      try { return itmToWgs84(x, y); } catch (_) {}
     }
     return [x, y]; // [lng, lat]
   };
@@ -2683,7 +3124,7 @@ function openReportForm() {
       pos => {
         rLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: Math.round(pos.coords.accuracy) };
         document.getElementById('r-loc-label').textContent =
-          `${rLocation.lat.toFixed(5)}, ${rLocation.lng.toFixed(5)}  (דיוק: ${rLocation.acc} מ')`;
+          `${fmtITM(rLocation.lat, rLocation.lng)}  (דיוק: ${rLocation.acc} מ')`;
       },
       () => { document.getElementById('r-loc-label').textContent = 'לא ניתן לאתר מיקום'; },
       { enableHighAccuracy: true, timeout: 8000 }
@@ -2781,7 +3222,7 @@ function renderReportList() {
   const statusCls   = { new:'status-new', inprogress:'status-inprogress', done:'status-done' };
 
   el.innerHTML = reports.map(r => {
-    const locStr   = r.location ? `📍 ${r.location.lat.toFixed(4)}, ${r.location.lng.toFixed(4)}` : '📍 מיקום לא זמין';
+    const locStr   = r.location ? `📍 ${fmtITM(r.location.lat, r.location.lng)}` : '📍 מיקום לא זמין';
     const photoHtml = r.photo ? `<img class="report-card-img" src="${r.photo}" onclick="rOpenLightbox(${r.id})" alt="תמונה" />` : '';
     const adminBtns = isAdmin() ? `
       <button class="rstat-btn rstat-inprogress" onclick="setReportStatus(${r.id},'inprogress')">בטיפול</button>
@@ -2856,6 +3297,9 @@ window.addEventListener('DOMContentLoaded', () => {
     initMap();
     authInit();
     loadReports();
+    renderSHPLibrary();
+    loadDefaultSHPLayers();
+    renderRasterLibrary();
   } catch(err) {
     document.getElementById('map').style.background = '#1a1a2e';
     document.getElementById('map').innerHTML =
