@@ -1824,11 +1824,34 @@ function closeLightbox() {
 // ═══════════════════════════════════════════════════════
 //  AUTH SYSTEM
 // ═══════════════════════════════════════════════════════
+// הסיסמאות לא נשמרות כאן. נשמר רק hash מסוג PBKDF2-SHA256 של "email:password".
+// להוספת משתמש: ראו את ההוראות בפונקציה nkHashCredentials() בהמשך.
+const AUTH_ITERATIONS = 310000;
 const AUTHORIZED_USERS = [
-  { email: 'Ayalaeilot@gmail.com', password: 'NK12345', name: 'אילה אורן', role: 'admin' },
-  // הוסף משתמשים נוספים כאן:
-  // { email: 'user@n-k.org.il', password: 'password', name: 'שם', role: 'admin' },
+  { salt: 'b839e70673b3ba3890588c76b87954ff', hash: '441ad0e7dc077af4c386f560fd0106a6037aae41df463b41bb423b0a3752a26f', name: 'אילה אורן', role: 'admin' },
 ];
+
+// מחשב hash לזוג מייל+סיסמה. שימוש להוספת משתמש: בקונסול של הדפדפן מריצים
+//   nkHashCredentials('mail@example.com', 'סיסמה-חזקה').then(console.log)
+// ומעתיקים את salt ו-hash לרשימה למעלה.
+async function nkPbkdf2(email, pass, saltHex) {
+  const enc  = new TextEncoder();
+  const key  = await crypto.subtle.importKey('raw', enc.encode(email.toLowerCase() + ':' + pass), 'PBKDF2', false, ['deriveBits']);
+  const salt = new Uint8Array(saltHex.match(/../g).map(h => parseInt(h, 16)));
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: AUTH_ITERATIONS }, key, 256);
+  return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function nkHashCredentials(email, pass) {
+  const salt = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
+  return { salt, hash: await nkPbkdf2(email, pass, salt) };
+}
+async function nkFindUser(email, pass) {
+  if (!window.crypto?.subtle) return null;
+  for (const u of AUTHORIZED_USERS) {
+    if (await nkPbkdf2(email, pass, u.salt) === u.hash) return u;
+  }
+  return null;
+}
 const SESSION_KEY = 'nk_session';
 let currentUser = null;
 
@@ -1858,14 +1881,12 @@ function closeLoginModal() {
   document.getElementById('login-modal-overlay').classList.remove('open');
 }
 
-function submitLogin() {
+async function submitLogin() {
   const email = document.getElementById('login-email').value.trim();
   const pass  = document.getElementById('login-pass').value;
   const err   = document.getElementById('login-err-msg');
 
-  const user = AUTHORIZED_USERS.find(
-    u => u.email.toLowerCase() === email.toLowerCase() && u.password === pass
-  );
+  const user  = await nkFindUser(email, pass);
 
   if (!user) {
     err.textContent = 'מייל או סיסמה שגויים';
@@ -1874,7 +1895,7 @@ function submitLogin() {
     return;
   }
 
-  currentUser = { email: user.email, name: user.name, role: user.role };
+  currentUser = { email: email.toLowerCase(), name: user.name, role: user.role };
   sessionStorage.setItem(SESSION_KEY, JSON.stringify(currentUser));
   closeLoginModal();
   renderAuthUI();
