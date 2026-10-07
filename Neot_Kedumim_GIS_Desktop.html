@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>מפת נאות קדומים – GIS</title>
+  <title>נאות קדומים GIS - שולחני</title>
 
   <!-- Leaflet (local) -->
   <link rel="stylesheet" href="lib/leaflet.css" />
@@ -636,6 +636,55 @@
     }
     .shp-lib-item label { cursor: pointer; flex: 1; }
     .shp-lib-item input[type="checkbox"] { accent-color: #4fc3f7; cursor: pointer; }
+  
+    /* ── חיפוש ישויות ───────────────────────────────── */
+    #nk-search {
+      position: absolute; z-index: 950; direction: rtl;
+      font-family: inherit;
+    }
+    #nk-search .nk-s-box {
+      display: flex; align-items: center; gap: 6px;
+      background: #0f1b2d; border: 1px solid #2c4a6e; border-radius: 10px;
+      padding: 0 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+    }
+    #nk-search .nk-s-box:focus-within { border-color: #4fc3f7; }
+    #nk-search .nk-s-box i { color: #7f97b2; font-size: 0.9rem; }
+    #nk-search input {
+      flex: 1; min-width: 0; background: transparent; border: none; outline: none;
+      color: #e8f1fa; font-size: 0.95rem; padding: 10px 0; font-family: inherit; direction: rtl;
+    }
+    #nk-search input::placeholder { color: #7f97b2; }
+    #nk-search .nk-s-clear {
+      background: none; border: none; color: #7f97b2; cursor: pointer; padding: 4px; display: none;
+      font-size: 0.95rem;
+    }
+    #nk-search .nk-s-clear.show { display: block; }
+    #nk-search .nk-s-results {
+      display: none; margin-top: 6px; max-height: 55vh; overflow-y: auto;
+      background: #0f1b2d; border: 1px solid #2c4a6e; border-radius: 10px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+    }
+    #nk-search .nk-s-results.open { display: block; }
+    #nk-search .nk-s-group {
+      font-size: 0.72rem; font-weight: 700; color: #4fc3f7; letter-spacing: 0.02em;
+      padding: 8px 12px 4px; border-top: 1px solid #1d3350;
+    }
+    #nk-search .nk-s-group:first-child { border-top: none; }
+    #nk-search .nk-s-item {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 8px 12px; cursor: pointer; color: #dce7f3; font-size: 0.9rem;
+    }
+    #nk-search .nk-s-item:hover, #nk-search .nk-s-item.active { background: #1a3150; }
+    #nk-search .nk-s-item mark { background: none; color: #ffe066; font-weight: 700; }
+    #nk-search .nk-s-num {
+      flex-shrink: 0; font-size: 0.75rem; color: #9fb4c9; background: #18304d;
+      border-radius: 6px; padding: 1px 7px; direction: ltr;
+    }
+    #nk-search .nk-s-empty { padding: 10px 12px; color: #7f97b2; font-size: 0.85rem; }
+    .nk-s-highlight { animation: nkPulse 1.4s ease-out infinite; }
+    @keyframes nkPulse { 0% { stroke-opacity: 1; } 100% { stroke-opacity: 0.15; } }
+
+    #nk-search { top: 12px; left: 50%; transform: translateX(-50%); width: min(380px, calc(100% - 140px)); }
   </style>
 </head>
 <body>
@@ -648,7 +697,7 @@
     <img src="https://www.n-k.org.il/wp-content/themes/neot/images/He-n-k.png"
          alt="לוגו נאות קדומים"
          style="width:110px;height:auto;flex-shrink:0;border-radius:4px;" />
-    <p>מערכת מידע גיאוגרפית – GIS</p>
+    <p>נאות קדומים GIS - שולחני</p>
   </div>
 
   <!-- Auth bar -->
@@ -942,6 +991,17 @@
 ════════════════════════════════════════════════════════ -->
 <div id="map-wrap">
   <div id="map"></div>
+
+<!-- ── חיפוש ───────────────────────────────────────── -->
+<div id="nk-search">
+  <div class="nk-s-box">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <input id="nk-search-input" type="text" enterkeyhint="search" autocomplete="off" spellcheck="false" placeholder="חיפוש: שם או מספר תחנה, נקודת עניין, אזור"
+           oninput="nkSearchInput()" onkeydown="nkSearchKey(event)" onfocus="nkSearchInput()" />
+    <button class="nk-s-clear" id="nk-search-clear" onclick="nkSearchClear()" title="ניקוי"><i class="fa-solid fa-xmark"></i></button>
+  </div>
+  <div class="nk-s-results" id="nk-search-results"></div>
+</div>
 
   <button id="toggle-sidebar" onclick="toggleSidebar()">
     <i class="fa-solid fa-chevron-right" id="toggle-icon"></i>
@@ -1320,6 +1380,8 @@ function updateRadiusScaledLabels() {
   });
 }
 
+// שכבות מספריית השכבות נדלקות בלי לשנות את הזום. העלאת קובץ ידנית עדיין מתמקדת בשכבה.
+let _suppressFitCount = 0;
 function addImportedLayer(layer, name, colorOverride) {
   const id    = 'layer_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
   const color = colorOverride || LAYER_COLORS[layerColorIdx++ % LAYER_COLORS.length];
@@ -1330,7 +1392,7 @@ function addImportedLayer(layer, name, colorOverride) {
 
   layer.addTo(map);
   renderLayerList();
-  try { map.fitBounds(layer.getBounds(), { padding: [30, 30] }); } catch(e) {}
+  if (!_suppressFitCount) { try { map.fitBounds(layer.getBounds(), { padding: [30, 30] }); } catch(e) {} }
   return id;
 }
 
@@ -2515,6 +2577,166 @@ const SHP_LIBRARY = [
 ];
 const shpLibraryLoaded = {}; // file -> [layerIds]
 
+// ═══════════════════════════════════════════════════════
+//  חיפוש ישויות – נקודות עניין, תחנות ניווט ותגיות לאזורים
+//  האינדקס נבנה מהשכבות בזמן הטעינה ונשמר גם אם השכבה מכובה.
+// ═══════════════════════════════════════════════════════
+const SEARCH_SOURCES = [
+  { file: 'SHP Layers/תחנות ניווט_זמני.zip',                    label: 'תחנות ניווט',         name: ['שם', 'name'],        num: ['מספר', 'num'] },
+  { file: 'SHP Layers/נקודות עניין מהמפה התיירותית_זמני.zip',   label: 'נקודות עניין',        name: ['name_he', 'name'],   num: ['poi_id'] },
+  { file: 'SHP Layers/תגיות לאיזורים חשובים.zip',               label: 'תגיות לאזורים חשובים', name: ['text', 'name'],      num: [] }
+];
+const nkSearchIndex = {};   // file -> [{ name, num, norm, latlng, src }]
+let nkSearchHits = [], nkSearchActive = -1, nkSearchMarker = null;
+
+function nkNorm(s) {
+  return String(s ?? '').toLowerCase()
+    .replace(/[֑-ׇ]/g, '')          // ניקוד וטעמים
+    .replace(/["'״׳`\-–_.,()]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+}
+function nkPick(props, keys) {
+  for (const k of keys) if (props[k] !== undefined && props[k] !== null && String(props[k]).trim() !== '') return String(props[k]).trim();
+  return '';
+}
+function nkLayerRegistry() {
+  return (typeof importedLayers !== 'undefined') ? importedLayers : mLayers;
+}
+function nkSearchIndexFile(file, ids) {
+  const src = SEARCH_SOURCES.find(s => s.file === file);
+  if (!src) return;
+  const reg = nkLayerRegistry(), out = [];
+  const visit = lyr => {
+    if (lyr.feature && lyr.feature.properties) {
+      const p = lyr.feature.properties;
+      const name = nkPick(p, src.name), num = nkPick(p, src.num);
+      if (!name && !num) return;
+      const latlng = lyr.getLatLng ? lyr.getLatLng() : (lyr.getBounds ? lyr.getBounds().getCenter() : null);
+      if (latlng) out.push({ name, num, norm: nkNorm(name), latlng, src });
+    } else if (lyr.eachLayer) lyr.eachLayer(visit);
+  };
+  (ids || []).forEach(id => reg[id] && visit(reg[id].layer));
+  nkSearchIndex[file] = out;
+}
+
+function nkEsc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function nkMarkName(name, q) {
+  const i = nkNorm(name).indexOf(q);
+  // הדגשה רק כשהנרמול לא שינה את אורך המחרוזת (אחרת מציגים בלי הדגשה)
+  if (i < 0 || nkNorm(name).length !== name.trim().length) return nkEsc(name);
+  const t = name.trim();
+  return nkEsc(t.slice(0, i)) + '<mark>' + nkEsc(t.slice(i, i + q.length)) + '</mark>' + nkEsc(t.slice(i + q.length));
+}
+
+function nkSearchInput() {
+  const input = document.getElementById('nk-search-input');
+  const box   = document.getElementById('nk-search-results');
+  const raw   = input.value;
+  document.getElementById('nk-search-clear').classList.toggle('show', raw.length > 0);
+  const q = nkNorm(raw);
+  nkSearchActive = -1;
+  if (!q) { box.classList.remove('open'); box.innerHTML = ''; nkSearchHits = []; return; }
+  const isNum = /^\d+$/.test(q);
+  const groups = [];
+  nkSearchHits = [];
+  for (const src of SEARCH_SOURCES) {
+    const scored = [];
+    for (const e of (nkSearchIndex[src.file] || [])) {
+      let score = -1;
+      if (isNum && e.num) {
+        if (e.num === q) score = 0; else if (e.num.startsWith(q)) score = 1;
+      }
+      if (score < 0 && e.norm) {
+        if (e.norm.startsWith(q)) score = 2;
+        else if ((' ' + e.norm).includes(' ' + q)) score = 3;
+        else if (e.norm.includes(q)) score = 4;
+      }
+      if (score >= 0) scored.push([score, e]);
+    }
+    scored.sort((a, b) => a[0] - b[0] ||
+      (a[0] <= 1 ? (+a[1].num) - (+b[1].num) : a[1].name.localeCompare(b[1].name, 'he')));
+    const seen = new Set(), uniq = [];
+    for (const [, e] of scored) {               // הסרת כפילויות בנתונים
+      const k = e.norm + '|' + e.num;
+      if (!seen.has(k)) { seen.add(k); uniq.push(e); }
+    }
+    const top = uniq.slice(0, 8);
+    if (top.length) groups.push({ src, items: top, more: uniq.length - top.length });
+  }
+  if (!groups.length) {
+    const indexed = SEARCH_SOURCES.some(s => nkSearchIndex[s.file]);
+    box.innerHTML = `<div class="nk-s-empty">${indexed ? 'לא נמצאו תוצאות' : 'השכבות עדיין נטענות…'}</div>`;
+    box.classList.add('open');
+    return;
+  }
+  let html = '';
+  for (const g of groups) {
+    html += `<div class="nk-s-group">${g.src.label}</div>`;
+    for (const e of g.items) {
+      const idx = nkSearchHits.push(e) - 1;
+      html += `<div class="nk-s-item" data-i="${idx}" onmousedown="event.preventDefault();nkSearchSelect(${idx})">
+        <span>${e.name ? nkMarkName(e.name, q) : '<i style="color:#9fb4c9">' + (e.src.label === 'תחנות ניווט' ? 'תחנה ' : '#') + nkEsc(e.num) + '</i>'}</span>${e.num ? `<span class="nk-s-num">${nkEsc(e.num)}</span>` : ''}</div>`;
+    }
+    if (g.more > 0) html += `<div class="nk-s-empty">ועוד ${g.more} תוצאות – המשיכו להקליד לצמצום</div>`;
+  }
+  box.innerHTML = html;
+  box.classList.add('open');
+}
+
+function nkSearchKey(ev) {
+  const box = document.getElementById('nk-search-results');
+  if (ev.key === 'Escape') { box.classList.remove('open'); ev.target.blur(); return; }
+  if (!nkSearchHits.length) return;
+  if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+    ev.preventDefault();
+    nkSearchActive = (nkSearchActive + (ev.key === 'ArrowDown' ? 1 : -1) + nkSearchHits.length) % nkSearchHits.length;
+    box.querySelectorAll('.nk-s-item').forEach(el => el.classList.toggle('active', +el.dataset.i === nkSearchActive));
+    const act = box.querySelector('.nk-s-item.active'); if (act) act.scrollIntoView({ block: 'nearest' });
+  } else if (ev.key === 'Enter') {
+    ev.preventDefault();
+    nkSearchSelect(nkSearchActive >= 0 ? nkSearchActive : 0);
+  }
+}
+
+async function nkSearchSelect(i) {
+  const e = nkSearchHits[i];
+  if (!e) return;
+  const input = document.getElementById('nk-search-input');
+  input.value = e.name || (e.src.label === 'תחנות ניווט' ? 'תחנה ' : '#') + e.num;
+  document.getElementById('nk-search-results').classList.remove('open');
+  input.blur();
+  // אם השכבה כבויה – מדליקים אותה
+  const li = SHP_LIBRARY.findIndex(it => it.file === e.src.file);
+  if (li >= 0 && !shpLibraryLoaded[e.src.file]) {
+    const cb = document.getElementById('shplib-' + li);
+    if (cb) cb.checked = true;
+    await toggleSHPLibraryLayer(li, true);
+  }
+  if (nkSearchMarker) map.removeLayer(nkSearchMarker);
+  nkSearchMarker = L.circleMarker(e.latlng, {
+    radius: 18, color: '#ffe066', weight: 4, fill: false, className: 'nk-s-highlight', interactive: false
+  }).addTo(map);
+  map.flyTo(e.latlng, Math.max(map.getZoom(), 18), { duration: 0.8 });
+  L.popup({ offset: [0, -14], autoPan: false })
+    .setLatLng(e.latlng)
+    .setContent(`<div dir="rtl" style="font-size:0.85rem"><b>${nkEsc(e.name || ((e.src.label === 'תחנות ניווט' ? 'תחנה ' : '#') + e.num))}</b>${e.num ? ` <span style="color:#888">(${nkEsc(e.num)})</span>` : ''}<br><span style="color:#888;font-size:0.75rem">${e.src.label}</span></div>`)
+    .openOn(map);
+}
+
+function nkSearchClear() {
+  const input = document.getElementById('nk-search-input');
+  input.value = '';
+  nkSearchInput();
+  if (nkSearchMarker) { map.removeLayer(nkSearchMarker); nkSearchMarker = null; }
+  map.closePopup();
+  input.focus();
+}
+document.addEventListener('click', ev => {
+  const s = document.getElementById('nk-search');
+  if (s && !s.contains(ev.target)) document.getElementById('nk-search-results')?.classList.remove('open');
+});
+
+
 // כל שכבות הספרייה נטענות כברירת מחדל. התצוגה מתמקדת בשמורה ולא בשכבה האחרונה שנטענה.
 async function loadDefaultSHPLayers() {
   const center = map.getCenter(), zoom = map.getZoom();
@@ -2547,8 +2769,11 @@ async function toggleSHPLibraryLayer(i, checked) {
     const res = await fetch(encodeURI(item.file));
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const buffer = await res.arrayBuffer();
-    const { ids } = await loadSHPFromBuffer(buffer, item.name);
+    let ids;
+    _suppressFitCount++;
+    try { ({ ids } = await loadSHPFromBuffer(buffer, item.name)); } finally { _suppressFitCount--; }
     shpLibraryLoaded[item.file] = ids;
+    nkSearchIndexFile(item.file, ids);
     if (!_shpLibAutoLoad) toast(item.name + ' נטען');
   } catch (err) {
     toast('שגיאה בטעינת ' + item.name + ': ' + err.message);
