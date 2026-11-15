@@ -1679,9 +1679,9 @@ function qmlSvgIcon(st, px) {
   const s = Math.max(1, Math.round(px));
   return L.icon({ iconUrl: st.svgUrl, iconSize: [s, s], iconAnchor: [s / 2, s / 2], tooltipAnchor: [0, 0], popupAnchor: [0, -s / 2], className: 'qml-svg-icon' });
 }
-function makeSvgMarker(latlng, st) {
+function makeSvgMarker(latlng, st, pane) {
   const px = Math.round(map ? svgMarkerPx(st) : 16);
-  const m = L.marker(latlng, { icon: qmlSvgIcon(st, px), keyboard: false });
+  const m = L.marker(latlng, { icon: qmlSvgIcon(st, px), keyboard: false, ...(pane ? { pane } : {}) });
   m._qmlSvg = st; m._qmlPx = px;
   if (!st.sizePx) svgScaledMarkers.push(m);
   return m;
@@ -1920,7 +1920,7 @@ function buildSHPLayerM(collections, baseName, qmlInfo, opts = {}) {
       },
       pointToLayer: (feature, latlng) => {
         const st = qmlInfo ? qmlInfo.getStyle(feature.properties || {}) : null;
-        if (st && st.isSvg) return makeSvgMarker(latlng, st);
+        if (st && st.isSvg) return makeSvgMarker(latlng, st, opts.markerPane ? ensureSHPPane(opts.markerPane, opts.markerZ) : null);
         if (st && st.useMeters) {
           return L.circle(latlng, {
             radius: st.radiusMeters,
@@ -1981,9 +1981,10 @@ const SHP_LIBRARY = [
   { name: 'גבול המיפוי', file: 'SHP Layers/גבול המיפוי.zip', off: true },
   { name: 'דרכים מהמיפוי ב-2023', file: 'SHP Layers/דרכים מהמיפוי ב2023.zip' },
   { name: 'מבנים מהמיפוי ב-2023', file: 'SHP Layers/מבנים מהמיפוי ב2023.zip', off: true },
-  { name: 'נקודות עניין מהמפה התיירותית', file: 'SHP Layers/נקודות עניין מהמפה התיירותית_תגיות.zip' },
+  // אייקוני נקודות העניין תמיד מעל דגלי תחנות הניווט (חלונית ייעודית עם z-index גבוה יותר)
+  { name: 'נקודות עניין מהמפה התיירותית', file: 'SHP Layers/נקודות עניין מהמפה התיירותית_תגיות.zip', markerPane: 'nkPoiIcons', markerZ: 620 },
   { name: 'תגיות לאיזורים חשובים', file: 'SHP Layers/תגיות לאיזורים חשובים.zip' },
-  { name: 'תחנת ניווט', file: 'SHP Layers/מספרי תחנות ניווט.zip' },
+  { name: 'תחנת ניווט', file: 'SHP Layers/מספרי תחנות ניווט.zip', markerPane: 'nkNavIcons', markerZ: 610 },
   // שכבת הרקע – בחלונית הנמוכה ביותר (מתחת למפות הרקע המעוגנות ולכל השכבות), ללא לחיצה
   { name: 'רקע למפה התיירותית', file: 'SHP Layers/רקע למפה התיירותית.zip', pane: 'nkBackground', paneZ: 210, interactive: false, off: true }
 ];
