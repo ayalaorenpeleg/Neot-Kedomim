@@ -1316,9 +1316,9 @@ function addNeotBoundary() {
     fillColor: '#4fc3f7',
     fillOpacity: 0.06,
     dashArray: '6 4'
-  }).addTo(map);
+  }); // כבוי כברירת מחדל – נדלק מ"שכבות מידע"
 
-  importedLayers['base-neot'] = { layer: poly, name: 'תחום השמורה', color: '#4fc3f7', visible: true };
+  importedLayers['base-neot'] = { layer: poly, name: 'תחום השמורה', color: '#4fc3f7', visible: false };
 
   // Attach identify to boundary
   poly.on('click', function(e) {
@@ -2938,7 +2938,7 @@ const SHP_LIBRARY = [
   { name: 'קווי גובה', file: 'SHP Layers/קווי גובה.zip', pane: 'nkContours',
     attribution: 'קווי גובה: Copernicus DEM © DLR e.V., Airbus DS (EU/ESA)' },
   { name: 'בריכות', file: 'SHP Layers/בריכות.zip' },
-  { name: 'גבול המיפוי', file: 'SHP Layers/גבול המיפוי.zip' },
+  { name: 'גבול המיפוי', file: 'SHP Layers/גבול המיפוי.zip', off: true },
   { name: 'דרכים מהמיפוי ב-2023', file: 'SHP Layers/דרכים מהמיפוי ב2023.zip' },
   { name: 'מבנים מהמיפוי ב-2023', file: 'SHP Layers/מבנים מהמיפוי ב2023.zip', off: true },
   { name: 'נקודות עניין מהמפה התיירותית', file: 'SHP Layers/נקודות עניין מהמפה התיירותית_תגיות.zip' },
