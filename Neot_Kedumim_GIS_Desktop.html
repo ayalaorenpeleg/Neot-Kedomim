@@ -1198,6 +1198,9 @@
 //  STATE
 // ═══════════════════════════════════════════════════════
 const NEOT_CENTER = [31.9499, 34.9797];
+// תצוגת ברירת המחדל: שכבת "רקע למפה התיירותית" + באפר 500 מ' (מחושב ב-ITM ומומר ל-WGS84)
+const NK_DEFAULT_BOUNDS = [[31.938091, 34.961825], [31.962442, 34.995876]];
+function nkFitDefault(animate) { map.fitBounds(NK_DEFAULT_BOUNDS, { padding: [0, 0], animate: !!animate }); }
 const NEOT_ZOOM   = 14;
 
 let map, scaleControl;
@@ -1223,7 +1226,7 @@ let activeLayerOpacity= {};
 //  INIT MAP
 // ═══════════════════════════════════════════════════════
 function initMap() {
-  map = L.map('map', { zoomControl: false }).setView(NEOT_CENTER, NEOT_ZOOM);
+  map = L.map('map', { zoomControl: false, zoomSnap: 0.25 }).setView(NEOT_CENTER, NEOT_ZOOM);
 
   // Base layers
   baseLayers.osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -1327,7 +1330,7 @@ function addNeotBoundary() {
     }, 'תחום השמורה', poly);
   });
 
-  map.fitBounds(poly.getBounds(), { padding: [30, 30] });
+  nkFitDefault();
   renderLayerList();
 }
 
@@ -2112,7 +2115,7 @@ function toggleMeasure(checked) {
 //  NAVIGATION
 // ═══════════════════════════════════════════════════════
 function goHome() {
-  map.flyTo(NEOT_CENTER, NEOT_ZOOM, { duration: 1 });
+  nkFitDefault(true);
 }
 
 function geolocate() {
@@ -2942,7 +2945,7 @@ const SHP_LIBRARY = [
   { name: 'תגיות לאיזורים חשובים', file: 'SHP Layers/תגיות לאיזורים חשובים.zip' },
   { name: 'תחנת ניווט', file: 'SHP Layers/מספרי תחנות ניווט.zip' },
   // שכבת הרקע – בחלונית הנמוכה ביותר (מתחת למפות הרקע המעוגנות ולכל השכבות), ללא לחיצה
-  { name: 'רקע למפה התיירותית', file: 'SHP Layers/רקע למפה התיירותית.zip', pane: 'nkBackground', paneZ: 210, interactive: false }
+  { name: 'רקע למפה התיירותית', file: 'SHP Layers/רקע למפה התיירותית.zip', pane: 'nkBackground', paneZ: 210, interactive: false, off: true }
 ];
 const shpLibraryLoaded = {}; // file -> [layerIds]
 
@@ -3108,11 +3111,9 @@ document.addEventListener('click', ev => {
 
 // כל שכבות הספרייה נטענות כברירת מחדל. התצוגה מתמקדת בשמורה ולא בשכבה האחרונה שנטענה.
 async function loadDefaultSHPLayers() {
-  const center = map.getCenter(), zoom = map.getZoom();
   _shpLibAutoLoad = true;
   await Promise.all(SHP_LIBRARY.map((it, i) => it.off ? null : toggleSHPLibraryLayer(i, true)));
   _shpLibAutoLoad = false;
-  map.setView(center, zoom);
 }
 let _shpLibAutoLoad = false;
 

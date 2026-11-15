@@ -1142,6 +1142,9 @@
 //  CONSTANTS & STATE
 // ═══════════════════════════════════════════════════════
 const NEOT_CENTER = [31.9499, 34.9797];
+// תצוגת ברירת המחדל: שכבת "רקע למפה התיירותית" + באפר 500 מ' (מחושב ב-ITM ומומר ל-WGS84)
+const NK_DEFAULT_BOUNDS = [[31.938091, 34.961825], [31.962442, 34.995876]];
+function nkFitDefault(animate) { map.fitBounds(NK_DEFAULT_BOUNDS, { padding: [0, 0], animate: !!animate }); }
 
 const CAT_ICONS = {
   general:     { emoji:'📍', color:'#ffffff' },
@@ -1229,7 +1232,7 @@ function init() {
       '+units=m +no_defs');
   }
 
-  map = L.map('map', { zoomControl: false, attributionControl: true })
+  map = L.map('map', { zoomControl: false, attributionControl: true, zoomSnap: 0.25 })
          .setView(NEOT_CENTER, 14);
 
   baseLayers.osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -1294,7 +1297,7 @@ function addBoundary() {
   // Wait for the map container to finish sizing before fitting bounds
   map.invalidateSize();
   setTimeout(() => {
-    map.fitBounds(poly.getBounds(), { padding: [28, 28] });
+    nkFitDefault();
   }, 150);
   renderMLayerList();
 }
@@ -1982,7 +1985,7 @@ const SHP_LIBRARY = [
   { name: 'תגיות לאיזורים חשובים', file: 'SHP Layers/תגיות לאיזורים חשובים.zip' },
   { name: 'תחנת ניווט', file: 'SHP Layers/מספרי תחנות ניווט.zip' },
   // שכבת הרקע – בחלונית הנמוכה ביותר (מתחת למפות הרקע המעוגנות ולכל השכבות), ללא לחיצה
-  { name: 'רקע למפה התיירותית', file: 'SHP Layers/רקע למפה התיירותית.zip', pane: 'nkBackground', paneZ: 210, interactive: false }
+  { name: 'רקע למפה התיירותית', file: 'SHP Layers/רקע למפה התיירותית.zip', pane: 'nkBackground', paneZ: 210, interactive: false, off: true }
 ];
 const shpLibraryLoaded = {};
 
@@ -2148,11 +2151,9 @@ document.addEventListener('click', ev => {
 
 // כל שכבות הספרייה נטענות כברירת מחדל. התצוגה מתמקדת בשמורה ולא בשכבה האחרונה שנטענה.
 async function loadDefaultSHPLayers() {
-  const center = map.getCenter(), zoom = map.getZoom();
   _shpLibAutoLoad = true;
   await Promise.all(SHP_LIBRARY.map((it, i) => it.off ? null : toggleSHPLibraryLayer(i, true)));
   _shpLibAutoLoad = false;
-  map.setView(center, zoom);
 }
 let _shpLibAutoLoad = false;
 
@@ -2588,9 +2589,7 @@ function switchSheetTab(btn) {
 //  NAVIGATION
 // ═══════════════════════════════════════════════════════
 function goHome() {
-  const poly = mLayers['base-neot']?.layer;
-  if (poly) map.fitBounds(poly.getBounds(), { padding: [20, 20] });
-  else map.flyTo(NEOT_CENTER, 14);
+  nkFitDefault(true);
 }
 function geolocate() {
   if (!navigator.geolocation) { toast('מיקום לא נתמך'); return; }
