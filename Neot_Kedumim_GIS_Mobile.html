@@ -715,14 +715,10 @@
       padding: 8px 10px; font-size: 0.82rem; color: #1e293b; cursor: pointer; border-radius: 6px; text-align: right; font-family: inherit; }
     .nk-lyr-menu button:hover { background: #eef2f8; }
     .nk-lyr-menu button i { color: #0f3460; width: 16px; text-align: center; }
-    #nk-legend-overlay { position: fixed; inset: 0; z-index: 5000; background: rgba(0,0,0,0.45);
-      display: flex; align-items: center; justify-content: center; padding: 16px; }
-    #nk-legend-box { background: #fff; color: #1e293b; border-radius: 12px; width: 100%; max-width: 360px; max-height: 80vh;
-      display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.4); font-family: inherit; }
-    .nk-legend-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px;
-      border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #0f3460; font-size: 0.95rem; }
-    .nk-legend-head button { background: none; border: none; font-size: 1.1rem; color: #64748b; cursor: pointer; }
-    .nk-legend-rows { overflow-y: auto; padding: 8px 16px 14px; }
+    .nk-legend-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .nk-legend-close { background: none; border: none; color: #8fb3d9; cursor: pointer; font-size: 1rem; padding: 2px 6px; }
+    .nk-legend-close:hover { color: #4fc3f7; }
+    .nk-legend-rows { background: #f8fafc; color: #1e293b; border-radius: 8px; padding: 6px 12px; max-height: 50vh; overflow-y: auto; direction: rtl; }
     .nk-legend-row { display: flex; align-items: center; gap: 12px; padding: 5px 0; font-size: 0.85rem; }
     .nk-legend-sw { width: 36px; display: flex; justify-content: center; align-items: center; flex-shrink: 0; }
     .nk-sw-img { width: 26px; height: 26px; object-fit: contain; }
@@ -894,6 +890,7 @@
       <div class="s-card-title"><i class="fa-solid fa-layer-group"></i>שכבות מידע</div>
       <div id="shp-library-list"></div>
     </div>
+    <div class="s-card" id="nk-legend-panel" style="display:none"></div>
   </div>
 
   <!-- POI list panel -->
@@ -2188,7 +2185,7 @@ function renderSHPLibrary() {
     html += `
     <div class="shp-lib-item">
       <input type="checkbox" id="extlyr-${id}" ${info.visible ? 'checked' : ''} onchange="nkToggleExtraLayer('${id}', this.checked)" />
-      <label for="extlyr-${id}"><span class="nk-lyr-dot" style="background:${info.color}"></span>${nkEscH(info.name)}</label>
+      <label for="extlyr-${id}">${nkEscH(info.name)}</label>
       ${menuBtn('ext', id)}
     </div>`;
   }
@@ -2286,17 +2283,19 @@ async function nkShowLegend(kind, key) {
     title = info.name;
     rows = [{ label: info.name, sw: nkLegendSwatch(null, info.color) }];
   }
-  document.getElementById('nk-legend-overlay')?.remove();
-  const ov = document.createElement('div');
-  ov.id = 'nk-legend-overlay';
-  ov.onclick = e => { if (e.target === ov) ov.remove(); };
-  ov.innerHTML = `
-    <div id="nk-legend-box" dir="rtl">
-      <div class="nk-legend-head"><span>מקרא – ${nkEscH(title)}</span>
-        <button onclick="document.getElementById('nk-legend-overlay').remove()" title="סגירה"><i class="fa-solid fa-xmark"></i></button></div>
-      <div class="nk-legend-rows">${rows.map(r => `<div class="nk-legend-row"><span class="nk-legend-sw">${r.sw}</span><span>${nkEscH(r.label)}</span></div>`).join('')}</div>
-    </div>`;
-  document.body.appendChild(ov);
+  // המקרא נפתח בפאנל צמוד ל"שכבות מידע" (מתחת לרשימה)
+  const panel = document.getElementById('nk-legend-panel');
+  if (!panel) return;
+  panel.innerHTML = `
+    <div class="s-card-title nk-legend-title"><span><i class="fa-solid fa-list"></i> מקרא – ${nkEscH(title)}</span>
+      <button class="nk-legend-close" onclick="nkCloseLegend()" title="סגירת המקרא"><i class="fa-solid fa-xmark"></i></button></div>
+    <div class="nk-legend-rows">${rows.map(r => `<div class="nk-legend-row"><span class="nk-legend-sw">${r.sw}</span><span>${nkEscH(r.label)}</span></div>`).join('')}</div>`;
+  panel.style.display = '';
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function nkCloseLegend() {
+  const panel = document.getElementById('nk-legend-panel');
+  if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
 }
 
 async function toggleSHPLibraryLayer(i, checked) {
