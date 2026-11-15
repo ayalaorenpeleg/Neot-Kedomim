@@ -636,6 +636,33 @@
     .leaflet-tooltip-qml.qml-clutter { visibility: hidden !important; }
     .qml-svg-icon { background: none; border: none; }
 
+    /* ── שכבות מידע: תפריט שורה ומקרא ── */
+    .shp-lib-item { position: relative; }
+    .nk-lyr-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-left: 6px; vertical-align: middle; }
+    .nk-lyr-menu-btn { background: none; border: none; color: #8fb3d9; cursor: pointer; padding: 2px 8px; font-size: 0.95rem; border-radius: 4px; }
+    .nk-lyr-menu-btn:hover { background: rgba(79,195,247,0.15); color: #4fc3f7; }
+    .nk-lyr-menu { position: absolute; left: 0; top: 100%; z-index: 3000; background: #fff; border-radius: 8px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.35); padding: 4px; min-width: 150px; direction: rtl; }
+    .nk-lyr-menu button { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: none;
+      padding: 8px 10px; font-size: 0.82rem; color: #1e293b; cursor: pointer; border-radius: 6px; text-align: right; font-family: inherit; }
+    .nk-lyr-menu button:hover { background: #eef2f8; }
+    .nk-lyr-menu button i { color: #0f3460; width: 16px; text-align: center; }
+    #nk-legend-overlay { position: fixed; inset: 0; z-index: 5000; background: rgba(0,0,0,0.45);
+      display: flex; align-items: center; justify-content: center; padding: 16px; }
+    #nk-legend-box { background: #fff; color: #1e293b; border-radius: 12px; width: 100%; max-width: 360px; max-height: 80vh;
+      display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.4); font-family: inherit; }
+    .nk-legend-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px;
+      border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #0f3460; font-size: 0.95rem; }
+    .nk-legend-head button { background: none; border: none; font-size: 1.1rem; color: #64748b; cursor: pointer; }
+    .nk-legend-rows { overflow-y: auto; padding: 8px 16px 14px; }
+    .nk-legend-row { display: flex; align-items: center; gap: 12px; padding: 5px 0; font-size: 0.85rem; }
+    .nk-legend-sw { width: 36px; display: flex; justify-content: center; align-items: center; flex-shrink: 0; }
+    .nk-sw-img { width: 26px; height: 26px; object-fit: contain; }
+    .nk-sw-fill { display: inline-block; width: 26px; height: 16px; border: 1px solid #666; border-radius: 2px; }
+    .nk-sw-dot { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid #333; }
+    /* כניסה עם משתמש וסיסמה מושבתת בשלב זה – כולם נכנסים כאורח */
+    [onclick^="openLoginModal"] { display: none !important; }
+
     .shp-lib-item {
       display: flex; align-items: center; gap: 8px;
       font-size: 0.8rem; padding: 4px 0;
@@ -731,12 +758,8 @@
       <div id="raster-library-list"></div>
     </div>
     <div class="section-card">
-      <div class="section-title"><i class="fa-solid fa-database"></i> ספריית שכבות SHP</div>
-      <ul id="shp-library-list" style="list-style:none;padding:0;margin:0;"></ul>
-    </div>
-    <div class="section-card">
-      <div class="section-title"><i class="fa-solid fa-layer-group"></i> שכבות פעילות</div>
-      <ul id="layer-list"></ul>
+      <div class="section-title"><i class="fa-solid fa-layer-group"></i> שכבות מידע</div>
+      <div id="shp-library-list"></div>
     </div>
     <div class="section-card">
       <div class="section-title"><i class="fa-solid fa-sliders"></i> שקיפות שכבה פעילה</div>
@@ -1429,25 +1452,7 @@ function attachIdentify(subLayer, layerName) {
   });
 }
 
-function renderLayerList() {
-  const ul = document.getElementById('layer-list');
-  ul.innerHTML = '';
-  for (const [id, info] of Object.entries(importedLayers)) {
-    const li = document.createElement('li');
-    li.className = 'layer-item';
-    li.id = id + '-item';
-    li.innerHTML = `
-      <span class="layer-color-swatch" style="background:${info.color}"></span>
-      <span class="layer-name" title="${info.name}">${info.name}</span>
-      <button class="layer-toggle ${info.visible ? '' : 'off'}" title="הצג/הסתר" onclick="toggleLayerItem('${id}')">
-        <i class="fa-solid ${info.visible ? 'fa-eye' : 'fa-eye-slash'}"></i>
-      </button>
-      <button class="icon-btn zoom" title="תקריב" onclick="zoomToLayer('${id}')"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
-      ${id !== 'base-neot' ? `<button class="icon-btn" title="מחק שכבה" onclick="removeLayer('${id}')"><i class="fa-solid fa-trash"></i></button>` : ''}
-    `;
-    ul.appendChild(li);
-  }
-}
+function renderLayerList() { renderSHPLibrary(); } // הרשימה מאוחדת ב"שכבות מידע"
 
 function toggleLayerItem(id) {
   const info = importedLayers[id];
@@ -2699,8 +2704,8 @@ function bindQMLLabel(feature, lyr, rules, qmlInfo, labeledMarkers) {
 }
 
 // חלונית ייעודית (למשל לקווי גובה – מתחת לשאר השכבות הווקטוריות)
-function ensureSHPPane(name) {
-  if (!map.getPane(name)) { map.createPane(name); map.getPane(name).style.zIndex = 390; }
+function ensureSHPPane(name, z) {
+  if (!map.getPane(name)) { map.createPane(name); map.getPane(name).style.zIndex = z || 390; }
   return name;
 }
 
@@ -2785,17 +2790,19 @@ function parseQML(text) {
     if (!rendererEl) return null;
     const type = rendererEl.getAttribute('type');
 
-    let getStyle, swatchColor = null;
+    let getStyle, swatchColor = null, legend = [];
     if (type === 'singleSymbol') {
       const symbolEl = rendererEl.querySelector(':scope > symbols > symbol');
       const style = symbolEl ? parseQMLSymbol(symbolEl) : null;
       if (!style) return null;
       swatchColor = style.fillColor || style.color;
       getStyle = () => style;
+      legend = [{ label: '', style }];
     } else if (type === 'categorizedSymbol') {
       const attr = rendererEl.getAttribute('attr');
       const cats = [...rendererEl.querySelectorAll(':scope > categories > category')].map(c => ({
-        value: c.getAttribute('value'), symbol: c.getAttribute('symbol')
+        value: c.getAttribute('value'), symbol: c.getAttribute('symbol'),
+        label: c.getAttribute('label') || c.getAttribute('value'), render: c.getAttribute('render')
       }));
       if (!attr || !cats.length) return null;
       const symbolStyles = {};
@@ -2803,6 +2810,7 @@ function parseQML(text) {
         symbolStyles[s.getAttribute('name')] = parseQMLSymbol(s);
       });
       const firstStyle = symbolStyles[cats[0].symbol];
+      legend = cats.filter(c => c.render !== 'false').map(c => ({ label: c.label, style: symbolStyles[c.symbol] }));
       swatchColor = firstStyle ? (firstStyle.fillColor || firstStyle.color) : null;
       getStyle = (props) => {
         const cat = qmlPickCategory(props, attr, cats);
@@ -2814,7 +2822,7 @@ function parseQML(text) {
 
     // בשכבות עם אייקוני SVG / קווים – גודל גופן בנקודות (pt) כמו ב-QGIS; שכבות ותיקות נשארות כפי שהיו
     const ptScale = /class="SvgMarker"|<symbol[^>]*type="line"/.test(text) ? 4 / 3 : 1;
-    return { getStyle, labeling: parseQMLLabeling(qgisEl), swatchColor, ptScale };
+    return { getStyle, labeling: parseQMLLabeling(qgisEl), swatchColor, ptScale, legend };
   } catch (_) { return null; }
 }
 
@@ -2840,7 +2848,8 @@ function buildSHPLayer(collections, baseName, qmlInfo, opts = {}) {
     const fallbackColor = LAYER_COLORS[layerColorIdx % LAYER_COLORS.length];
     const swatch = qmlInfo ? (qmlInfo.swatchColor || fallbackColor) : fallbackColor;
     const layer = L.geoJSON(fc, {
-      ...(opts.pane ? { pane: ensureSHPPane(opts.pane) } : {}),
+      ...(opts.pane ? { pane: ensureSHPPane(opts.pane, opts.paneZ) } : {}),
+      ...(opts.interactive === false ? { interactive: false } : {}),
       ...(opts.attribution ? { attribution: opts.attribution } : {}),
       style: (feature) => qmlInfo
         ? qmlInfo.getStyle(feature.properties || {})
@@ -2903,6 +2912,7 @@ async function loadSHPFromBuffer(buffer, baseName, opts = {}) {
   });
   const qmlText = extractQMLFromZip(buffer);
   const qmlInfo = qmlText ? parseQML(qmlText) : null;
+  if (opts && opts.file) shpLibQml[opts.file] = qmlInfo;
   return buildSHPLayer(collections, baseName, qmlInfo, opts);
 }
 
@@ -2930,10 +2940,12 @@ const SHP_LIBRARY = [
   { name: 'בריכות', file: 'SHP Layers/בריכות.zip' },
   { name: 'גבול המיפוי', file: 'SHP Layers/גבול המיפוי.zip' },
   { name: 'דרכים מהמיפוי ב-2023', file: 'SHP Layers/דרכים מהמיפוי ב2023.zip' },
-  { name: 'מבנים מהמיפוי ב-2023', file: 'SHP Layers/מבנים מהמיפוי ב2023.zip' },
+  { name: 'מבנים מהמיפוי ב-2023', file: 'SHP Layers/מבנים מהמיפוי ב2023.zip', off: true },
   { name: 'נקודות עניין מהמפה התיירותית', file: 'SHP Layers/נקודות עניין מהמפה התיירותית_תגיות.zip' },
   { name: 'תגיות לאיזורים חשובים', file: 'SHP Layers/תגיות לאיזורים חשובים.zip' },
-  { name: 'מספרי תחנות ניווט', file: 'SHP Layers/מספרי תחנות ניווט.zip' }
+  { name: 'תחנת ניווט', file: 'SHP Layers/מספרי תחנות ניווט.zip' },
+  // שכבת הרקע – בחלונית הנמוכה ביותר (מתחת למפות הרקע המעוגנות ולכל השכבות), ללא לחיצה
+  { name: 'רקע למפה התיירותית', file: 'SHP Layers/רקע למפה התיירותית.zip', pane: 'nkBackground', paneZ: 210, interactive: false }
 ];
 const shpLibraryLoaded = {}; // file -> [layerIds]
 
@@ -3101,24 +3113,156 @@ document.addEventListener('click', ev => {
 async function loadDefaultSHPLayers() {
   const center = map.getCenter(), zoom = map.getZoom();
   _shpLibAutoLoad = true;
-  await Promise.all(SHP_LIBRARY.map((_, i) => toggleSHPLibraryLayer(i, true)));
+  await Promise.all(SHP_LIBRARY.map((it, i) => it.off ? null : toggleSHPLibraryLayer(i, true)));
   _shpLibAutoLoad = false;
   map.setView(center, zoom);
 }
 let _shpLibAutoLoad = false;
 
+// ═══════════════════════════════════════════════════════
+//  "שכבות מידע" – רשימה אחת לכל השכבות (ספרייה + תחום השמורה + קבצים שיובאו)
+//  לכל שורה תפריט קטן: זום לשכבה, מקרא מפורט (ולקבצים שיובאו – הסרה)
+// ═══════════════════════════════════════════════════════
+const shpLibState = SHP_LIBRARY.map(it => !it.off);   // האם השכבה אמורה להיות דולקת
+const shpLibQml = {};                                   // file -> qmlInfo (למקרא)
+
+function nkLibraryLayerIds() {
+  return new Set(Object.values(shpLibraryLoaded).flat());
+}
+function nkEscH(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
 function renderSHPLibrary() {
-  const ul = document.getElementById('shp-library-list');
-  if (!ul) return;
-  ul.innerHTML = SHP_LIBRARY.map((item, i) => `
-    <li class="shp-lib-item">
-      <input type="checkbox" id="shplib-${i}" checked onchange="toggleSHPLibraryLayer(${i}, this.checked)" />
-      <label for="shplib-${i}">${item.name}</label>
-    </li>`).join('');
+  const box = document.getElementById('shp-library-list');
+  if (!box) return;
+  const reg = nkLayerRegistry(), libIds = nkLibraryLayerIds();
+  const menuBtn = (kind, key) =>
+    `<button class="nk-lyr-menu-btn" title="אפשרויות" onclick="nkToggleLayerMenu(event,'${kind}','${key}')"><i class="fa-solid fa-ellipsis-vertical"></i></button>`;
+  let html = SHP_LIBRARY.map((item, i) => `
+    <div class="shp-lib-item">
+      <input type="checkbox" id="shplib-${i}" ${shpLibState[i] ? 'checked' : ''} onchange="toggleSHPLibraryLayer(${i}, this.checked)" />
+      <label for="shplib-${i}">${nkEscH(item.name)}</label>
+      ${menuBtn('lib', i)}
+    </div>`).join('');
+  for (const [id, info] of Object.entries(reg)) {
+    if (libIds.has(id)) continue;
+    html += `
+    <div class="shp-lib-item">
+      <input type="checkbox" id="extlyr-${id}" ${info.visible ? 'checked' : ''} onchange="nkToggleExtraLayer('${id}', this.checked)" />
+      <label for="extlyr-${id}"><span class="nk-lyr-dot" style="background:${info.color}"></span>${nkEscH(info.name)}</label>
+      ${menuBtn('ext', id)}
+    </div>`;
+  }
+  box.innerHTML = html;
+}
+
+function nkToggleExtraLayer(id, checked) {
+  const info = nkLayerRegistry()[id];
+  if (!info) return;
+  if (checked && !info.visible) { info.layer.addTo(map); info.visible = true; }
+  else if (!checked && info.visible) { map.removeLayer(info.layer); info.visible = false; }
+}
+
+// ── תפריט השורה ──
+function nkCloseLayerMenu() { document.querySelectorAll('.nk-lyr-menu').forEach(m => m.remove()); }
+function nkToggleLayerMenu(ev, kind, key) {
+  ev.stopPropagation();
+  const btn = ev.currentTarget;
+  const had = btn.parentElement.querySelector('.nk-lyr-menu');
+  nkCloseLayerMenu();
+  if (had) return;
+  const m = document.createElement('div');
+  m.className = 'nk-lyr-menu';
+  let items = `
+    <button onclick="nkCloseLayerMenu();nkZoomToLayer('${kind}','${key}')"><i class="fa-solid fa-magnifying-glass-plus"></i> זום לשכבה</button>
+    <button onclick="nkCloseLayerMenu();nkShowLegend('${kind}','${key}')"><i class="fa-solid fa-list"></i> מקרא</button>`;
+  if (kind === 'ext' && key !== 'base-neot') {
+    items += `<button onclick="nkCloseLayerMenu();nkRemoveExtraLayer('${key}')"><i class="fa-solid fa-trash"></i> הסרת השכבה</button>`;
+  }
+  m.innerHTML = items;
+  btn.parentElement.appendChild(m);
+}
+document.addEventListener('click', ev => { if (!ev.target.closest('.nk-lyr-menu')) nkCloseLayerMenu(); });
+
+function nkRemoveExtraLayer(id) {
+  if (typeof removeMLayer === 'function') removeMLayer(id); else removeLayer(id);
+  renderSHPLibrary();
+}
+
+async function nkZoomToLayer(kind, key) {
+  const reg = nkLayerRegistry();
+  let ids;
+  if (kind === 'lib') {
+    const i = +key, item = SHP_LIBRARY[i];
+    if (!shpLibraryLoaded[item.file]) {        // שכבה כבויה – מדליקים אותה קודם
+      await toggleSHPLibraryLayer(i, true);
+      if (!shpLibraryLoaded[item.file]) return;
+    }
+    ids = shpLibraryLoaded[item.file];
+  } else ids = [key];
+  const b = L.latLngBounds([]);
+  ids.forEach(id => {
+    const info = reg[id];
+    if (!info) return;
+    if (!info.visible) { info.layer.addTo(map); info.visible = true; renderSHPLibrary(); }
+    try { const lb = info.layer.getBounds(); if (lb && lb.isValid()) b.extend(lb); } catch (_) {}
+  });
+  if (!b.isValid()) { toast('לא ניתן לבצע זום לשכבה זו'); return; }
+  if (typeof closeSheet === 'function') closeSheet();
+  map.fitBounds(b, { padding: [30, 30], maxZoom: 19 });
+}
+
+// ── מקרא ──
+function nkLegendSwatch(st, fallbackColor) {
+  if (!st) return `<span class="nk-sw-fill" style="background:${fallbackColor || '#999'}"></span>`;
+  if (st.isSvg) return `<img class="nk-sw-img" src="${st.svgUrl}" alt="">`;
+  if (st.fill === false) {
+    const w = Math.min(Math.max(st.weight || 2, 1.5), 5);
+    return `<svg class="nk-sw-line" width="34" height="14" viewBox="0 0 34 14"><line x1="2" y1="7" x2="32" y2="7" stroke="${st.color}" stroke-width="${w}" ${st.dashArray ? `stroke-dasharray="${st.dashArray}"` : ''} stroke-linecap="round"/></svg>`;
+  }
+  if (st.isMarker) return `<span class="nk-sw-dot" style="background:${st.fillColor};border-color:${st.color}"></span>`;
+  return `<span class="nk-sw-fill" style="background:${st.fillColor};border-color:${st.color}"></span>`;
+}
+
+async function nkShowLegend(kind, key) {
+  let title, rows = [];
+  if (kind === 'lib') {
+    const item = SHP_LIBRARY[+key];
+    title = item.name;
+    let q = shpLibQml[item.file];
+    if (q === undefined) {
+      try {
+        const res = await fetch(encodeURI(item.file));
+        const t = extractQMLFromZip(await res.arrayBuffer());
+        q = t ? parseQML(t) : null;
+      } catch (_) { q = null; }
+      shpLibQml[item.file] = q;
+    }
+    if (q && q.legend && q.legend.length) {
+      rows = q.legend.map(e => ({ label: e.label || item.name, sw: nkLegendSwatch(e.style) }));
+    } else rows = [{ label: item.name, sw: nkLegendSwatch(null, q && q.swatchColor) }];
+  } else {
+    const info = nkLayerRegistry()[key];
+    if (!info) return;
+    title = info.name;
+    rows = [{ label: info.name, sw: nkLegendSwatch(null, info.color) }];
+  }
+  document.getElementById('nk-legend-overlay')?.remove();
+  const ov = document.createElement('div');
+  ov.id = 'nk-legend-overlay';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `
+    <div id="nk-legend-box" dir="rtl">
+      <div class="nk-legend-head"><span>מקרא – ${nkEscH(title)}</span>
+        <button onclick="document.getElementById('nk-legend-overlay').remove()" title="סגירה"><i class="fa-solid fa-xmark"></i></button></div>
+      <div class="nk-legend-rows">${rows.map(r => `<div class="nk-legend-row"><span class="nk-legend-sw">${r.sw}</span><span>${nkEscH(r.label)}</span></div>`).join('')}</div>
+    </div>`;
+  document.body.appendChild(ov);
 }
 
 async function toggleSHPLibraryLayer(i, checked) {
   const item = SHP_LIBRARY[i];
+  shpLibState[i] = checked;
+  if (checked && shpLibraryLoaded[item.file]) return;
   if (!checked) {
     (shpLibraryLoaded[item.file] || []).forEach(removeLayer);
     delete shpLibraryLoaded[item.file];
@@ -3134,9 +3278,11 @@ async function toggleSHPLibraryLayer(i, checked) {
     try { ({ ids } = await loadSHPFromBuffer(buffer, item.name, item)); } finally { _suppressFitCount--; }
     shpLibraryLoaded[item.file] = ids;
     nkSearchIndexFile(item.file, ids);
+    renderSHPLibrary();
     if (!_shpLibAutoLoad) toast(item.name + ' נטען');
   } catch (err) {
     toast('שגיאה בטעינת ' + item.name + ': ' + err.message);
+    shpLibState[i] = false;
     const cb = document.getElementById('shplib-' + i);
     if (cb) cb.checked = false;
   }
@@ -3596,11 +3742,10 @@ const SESSION_KEY = 'nk_session';
 let currentUser = null;
 
 function authInit() {
-  try {
-    const s = sessionStorage.getItem(SESSION_KEY);
-    if (s) { currentUser = JSON.parse(s); renderAuthBar(); return; }
-  } catch(e) {}
-  openLoginModal();
+  // בשלב זה אין כניסה עם משתמש וסיסמה – כל הנכנסים מוגדרים כאורח
+  currentUser = null;
+  try { sessionStorage.removeItem(SESSION_KEY); } catch(e) {}
+  renderAuthBar();
 }
 
 function openLoginModal() {
