@@ -1965,6 +1965,13 @@ async function loadSHPFromBuffer(buffer, baseName, opts = {}) {
     const fc      = dbfRows ? shp.combine([rawGeom, dbfRows]) : rawGeom;
     return reprojectGeoJSON(fc);
   });
+  // הסתרת שדות שלא אמורים להופיע במידע הנוסף (חלונית הישות / זיהוי)
+  if (opts && opts.hideFields && opts.hideFields.length) {
+    collections.forEach(fc => (fc.features || []).forEach(ft => {
+      const p = ft.properties; if (!p) return;
+      Object.keys(p).forEach(k => { if (opts.hideFields.includes(cleanDBFFieldName(k))) delete p[k]; });
+    }));
+  }
   const qmlText = extractQMLFromZip(buffer);
   const qmlInfo = qmlText ? parseQML(qmlText) : null;
   if (opts && opts.file) shpLibQml[opts.file] = qmlInfo;
@@ -1982,7 +1989,8 @@ const SHP_LIBRARY = [
   { name: 'דרכים מהמיפוי ב-2023', file: 'SHP Layers/דרכים מהמיפוי ב2023.zip' },
   { name: 'מבנים מהמיפוי ב-2023', file: 'SHP Layers/מבנים מהמיפוי ב2023.zip', off: true },
   // אייקוני נקודות העניין תמיד מעל דגלי תחנות הניווט (חלונית ייעודית עם z-index גבוה יותר)
-  { name: 'נקודות עניין מהמפה התיירותית', file: 'SHP Layers/נקודות עניין מהמפה התיירותית_תגיות.zip', markerPane: 'nkPoiIcons', markerZ: 620 },
+  { name: 'נקודות עניין מהמפה התיירותית', file: 'SHP Layers/נקודות עניין מהמפה התיירותית_תגיות.zip', markerPane: 'nkPoiIcons', markerZ: 620,
+    hideFields: ['poi_id', 'x_itm', 'y_itm', 'uid'] },   // שדות פנימיים – לא מוצגים במידע הנוסף
   { name: 'תגיות לאיזורים חשובים', file: 'SHP Layers/תגיות לאיזורים חשובים.zip' },
   { name: 'תחנת ניווט', file: 'SHP Layers/מספרי תחנות ניווט.zip', markerPane: 'nkNavIcons', markerZ: 610 },
   // שכבת הרקע – בחלונית הנמוכה ביותר (מתחת למפות הרקע המעוגנות ולכל השכבות), ללא לחיצה
