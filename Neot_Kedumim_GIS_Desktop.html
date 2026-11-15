@@ -630,6 +630,12 @@
     }
     .leaflet-tooltip-qml::before { display: none !important; }
 
+    /* תוויות מעל/מתחת לאייקוני SVG – בלי השוליים של Leaflet; הסתרה בזום רחוק */
+    .leaflet-tooltip-qml.leaflet-tooltip-top, .leaflet-tooltip-qml.leaflet-tooltip-bottom { margin-top: 0 !important; }
+    .nk-labels-far .qml-far-hide { display: none !important; }
+    .leaflet-tooltip-qml.qml-clutter { visibility: hidden !important; }
+    .qml-svg-icon { background: none; border: none; }
+
     .shp-lib-item {
       display: flex; align-items: center; gap: 8px;
       font-size: 0.8rem; padding: 4px 0;
@@ -1245,6 +1251,7 @@ function initMap() {
   map.on('zoomend', () => {
     document.getElementById('coords-zoom').textContent = 'Zoom: ' + map.getZoom();
     updateRadiusScaledLabels();
+    updateSvgMarkers();
   });
   document.getElementById('coords-zoom').textContent = 'Zoom: ' + map.getZoom();
 
@@ -2336,6 +2343,367 @@ function qmlOptions(layerEl) {
   return opts;
 }
 
+// ── הרחבות QML: סמלי SVG, ביטויי QGIS, תוויות לפי חוקים (rule-based) ──
+const MM_PX = 96 / 25.4;          // מ"מ על המסך → פיקסלים
+const QML_LABEL_MIN_ZOOM = 17;    // תוויות של אייקונים וקווי גובה מוצגות רק מזום זה ומעלה (כדי למנוע עומס)
+const qmlSvgUrlCache = {};
+function qmlSvgUrl(name) {
+  if (!name) return null;
+  if (qmlSvgUrlCache[name]) return qmlSvgUrlCache[name];
+  let text = null;
+  try {
+    if (name.startsWith('base64:')) {
+      const bin = atob(name.slice(7));
+      text = new TextDecoder('utf-8').decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
+    } else if (/^\s*<svg/i.test(name)) text = name;
+  } catch (_) {}
+  if (!text) return null;
+  return (qmlSvgUrlCache[name] = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' })));
+}
+
+// מהדר ביטוי QGIS (תת-קבוצה: שדות, מחרוזות, מספרים, = <> < > IS IN LIKE AND OR NOT, CASE,
+// ופונקציות נפוצות כמו if / to_string / to_int / concat) לפונקציה props => value
+function qmlCompileExpr(src) {
+  const toks = [];
+  const re = /\s+|"((?:[^"]|"")*)"|'((?:[^']|'')*)'|(\d+(?:\.\d+)?)|(<>|!=|<=|>=|\|\||[=<>+\-*\/%(),])|([A-Za-z_][A-Za-z0-9_]*)/y;
+  while (re.lastIndex < src.length) {
+    const m = re.exec(src);
+    if (!m) throw new Error('expr');
+    if (m[1] !== undefined) toks.push({ t: 'f', v: m[1].replace(/""/g, '"') });
+    else if (m[2] !== undefined) toks.push({ t: 's', v: m[2].replace(/''/g, "'") });
+    else if (m[3] !== undefined) toks.push({ t: 'n', v: parseFloat(m[3]) });
+    else if (m[4] !== undefined) toks.push({ t: 'o', v: m[4] });
+    else if (m[5] !== undefined) toks.push({ t: 'w', v: m[5].toUpperCase(), raw: m[5] });
+  }
+  let i = 0;
+  const isW = w => toks[i] && toks[i].t === 'w' && toks[i].v === w;
+  const isO = o => toks[i] && toks[i].t === 'o' && toks[i].v === o;
+  const expect = o => { if (!isO(o)) throw new Error('expr'); i++; };
+  const N = v => v === null || v === undefined || (typeof v === 'number' && isNaN(v));
+  const T = v => N(v) ? null : !!v;
+  const num = v => (typeof v === 'number' ? v : parseFloat(v));
+  const eqv = (x, y) => {
+    if (typeof x === 'number' || typeof y === 'number') { const a = num(x), b = num(y); if (!isNaN(a) && !isNaN(b)) return a === b; }
+    return String(x) === String(y);
+  };
+  const cmp = (op, x, y) => {
+    if (N(x) || N(y)) return null;
+    if (op === '=') return eqv(x, y);
+    if (op === '<>' || op === '!=') return !eqv(x, y);
+    let a = x, b = y;
+    if (typeof x === 'number' || typeof y === 'number') { a = num(x); b = num(y); } else { a = String(x); b = String(y); }
+    return op === '<' ? a < b : op === '>' ? a > b : op === '<=' ? a <= b : a >= b;
+  };
+  function parseOr() {
+    let a = parseAnd();
+    while (isW('OR')) { i++; const l = a, r = parseAnd(); a = p => { const x = T(l(p)), y = T(r(p)); return (x || y) ? true : (x === null || y === null) ? null : false; }; }
+    return a;
+  }
+  function parseAnd() {
+    let a = parseNot();
+    while (isW('AND')) { i++; const l = a, r = parseNot(); a = p => { const x = T(l(p)), y = T(r(p)); return (x === false || y === false) ? false : (x === null || y === null) ? null : true; }; }
+    return a;
+  }
+  function parseNot() {
+    if (isW('NOT')) { i++; const a = parseNot(); return p => { const x = T(a(p)); return x === null ? null : !x; }; }
+    return parseCmp();
+  }
+  function parseCmp() {
+    let a = parseAdd();
+    for (;;) {
+      const t = toks[i];
+      if (t && t.t === 'o' && ['=', '<>', '!=', '<', '>', '<=', '>='].includes(t.v)) {
+        i++; const l = a, r = parseAdd(), op = t.v; a = p => cmp(op, l(p), r(p));
+      } else if (isW('IS')) {
+        i++; let neg = false; if (isW('NOT')) { neg = true; i++; }
+        const l = a, r = parseAdd();
+        a = p => { const x = l(p), y = r(p); const eq = (N(x) && N(y)) || (!N(x) && !N(y) && eqv(x, y)); return neg ? !eq : eq; };
+      } else if (isW('IN') || (isW('NOT') && toks[i + 1] && toks[i + 1].v === 'IN')) {
+        let neg = false; if (isW('NOT')) { neg = true; i++; } i++;
+        expect('('); const items = [];
+        if (!isO(')')) { items.push(parseOr()); while (isO(',')) { i++; items.push(parseOr()); } }
+        expect(')');
+        const l = a; a = p => { const x = l(p); if (N(x)) return null; const hit = items.some(f => eqv(x, f(p))); return neg ? !hit : hit; };
+      } else if (isW('LIKE') || isW('ILIKE') || (isW('NOT') && toks[i + 1] && /^I?LIKE$/.test(toks[i + 1].v))) {
+        let neg = false; if (isW('NOT')) { neg = true; i++; }
+        const ci = toks[i].v === 'ILIKE'; i++;
+        const l = a, r = parseAdd();
+        a = p => {
+          const x = l(p), y = r(p); if (N(x) || N(y)) return null;
+          const rx = new RegExp('^' + String(y).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*').replace(/_/g, '.') + '$', ci ? 'is' : 's');
+          const hit = rx.test(String(x)); return neg ? !hit : hit;
+        };
+      } else break;
+    }
+    return a;
+  }
+  function parseAdd() {
+    let a = parseMul();
+    for (;;) {
+      if (isO('||')) { i++; const l = a, r = parseMul(); a = p => { const x = l(p), y = r(p); return (N(x) || N(y)) ? null : String(x) + String(y); }; }
+      else if (isO('+') || isO('-')) {
+        const op = toks[i++].v, l = a, r = parseMul();
+        a = p => { const x = l(p), y = r(p); if (N(x) || N(y)) return null;
+          if (op === '+' && typeof x === 'string' && typeof y === 'string') return x + y;
+          return op === '+' ? num(x) + num(y) : num(x) - num(y); };
+      } else break;
+    }
+    return a;
+  }
+  function parseMul() {
+    let a = parseUnary();
+    while (isO('*') || isO('/') || isO('%')) {
+      const op = toks[i++].v, l = a, r = parseUnary();
+      a = p => { const x = l(p), y = r(p); if (N(x) || N(y)) return null; const u = num(x), v = num(y); return op === '*' ? u * v : op === '/' ? u / v : u % v; };
+    }
+    return a;
+  }
+  function parseUnary() {
+    if (isO('-')) { i++; const a = parseUnary(); return p => { const x = a(p); return N(x) ? null : -num(x); }; }
+    return parsePrimary();
+  }
+  const FN = {
+    coalesce: (...a) => { for (const v of a) if (!N(v)) return v; return null; },
+    to_string: v => N(v) ? null : String(v), tostring: v => N(v) ? null : String(v),
+    to_int: v => { const n = num(v); return isNaN(n) ? null : Math.round(n); }, toint: v => { const n = num(v); return isNaN(n) ? null : Math.round(n); },
+    to_real: v => { const n = num(v); return isNaN(n) ? null : n; }, toreal: v => { const n = num(v); return isNaN(n) ? null : n; },
+    concat: (...a) => a.filter(v => !N(v)).map(String).join(''),
+    upper: v => N(v) ? null : String(v).toUpperCase(), lower: v => N(v) ? null : String(v).toLowerCase(),
+    trim: v => N(v) ? null : String(v).trim(), length: v => N(v) ? null : String(v).length,
+    left: (s, n) => N(s) ? null : String(s).slice(0, n), right: (s, n) => N(s) ? null : String(s).slice(-n),
+    substr: (s, a, n) => N(s) ? null : String(s).substr(a - 1, n === undefined ? undefined : n),
+    replace: (s, a, b) => N(s) ? null : String(s).split(a).join(b),
+    round: (v, d) => { if (N(v)) return null; const f = Math.pow(10, d || 0); return Math.round(num(v) * f) / f; },
+    format_number: (v, d) => N(v) ? null : num(v).toFixed(d || 0),
+    abs: v => N(v) ? null : Math.abs(num(v)), floor: v => N(v) ? null : Math.floor(num(v)), ceil: v => N(v) ? null : Math.ceil(num(v))
+  };
+  function parsePrimary() {
+    const t = toks[i++];
+    if (!t) throw new Error('expr');
+    if (t.t === 'n' || t.t === 's') { const v = t.v; return () => v; }
+    if (t.t === 'f') { const k = t.v; return p => { const v = p[k]; return N(v) ? null : v; }; }
+    if (t.t === 'o' && t.v === '(') { const a = parseOr(); expect(')'); return a; }
+    if (t.t === 'w') {
+      if (t.v === 'NULL') return () => null;
+      if (t.v === 'TRUE') return () => true;
+      if (t.v === 'FALSE') return () => false;
+      if (t.v === 'CASE') {
+        const arms = []; let other = () => null;
+        while (isW('WHEN')) { i++; const c = parseOr(); if (!isW('THEN')) throw new Error('expr'); i++; arms.push([c, parseOr()]); }
+        if (isW('ELSE')) { i++; other = parseOr(); }
+        if (!isW('END')) throw new Error('expr'); i++;
+        return p => { for (const [c, v] of arms) if (T(c(p)) === true) return v(p); return other(p); };
+      }
+      if (isO('(')) {
+        i++; const args = [];
+        if (!isO(')')) { args.push(parseOr()); while (isO(',')) { i++; args.push(parseOr()); } }
+        expect(')');
+        const name = t.raw.toLowerCase();
+        if (name === 'if') return p => (T(args[0](p)) === true ? args[1](p) : (args[2] ? args[2](p) : null));
+        const f = FN[name]; if (!f) throw new Error('fn ' + name);
+        return p => f(...args.map(a => a(p)));
+      }
+    }
+    throw new Error('expr');
+  }
+  const fn = parseOr();
+  if (i !== toks.length) throw new Error('expr');
+  return fn;
+}
+
+// מאפייני ישות עם שמות שדות נקיים; NaN (שדה מספרי ריק ב-DBF) → null
+function qmlCleanProps(props) {
+  const out = {};
+  for (const k in props) { const v = props[k]; out[cleanDBFFieldName(k)] = (typeof v === 'number' && isNaN(v)) ? null : v; }
+  return out;
+}
+
+// הגדרות טקסט של תווית (simple או חוק אחד ב-rule-based)
+function parseQMLTextSettings(settingsEl) {
+  const ts = settingsEl.querySelector('text-style');
+  if (!ts) return null;
+  const fieldName = ts.getAttribute('fieldName');
+  if (!fieldName) return null;
+  let text;
+  if (ts.getAttribute('isExpression') === '1') {
+    try { text = qmlCompileExpr(fieldName); } catch (_) { return null; }
+  } else {
+    const fn = cleanDBFFieldName(fieldName);
+    text = p => p[fn];
+  }
+  const color  = qmlColor(ts.getAttribute('textColor'));
+  const buffer = ts.querySelector('text-buffer');
+  const haloOn = buffer && buffer.getAttribute('bufferDraw') === '1';
+  const halo   = haloOn ? qmlColor(buffer.getAttribute('bufferColor')) : null;
+  // מיקום התווית ביחס לנקודה: מעל / מתחת / במרכז
+  let dir = 'center';
+  const pl = settingsEl.querySelector('placement');
+  if (pl && (pl.getAttribute('placement') === '6' || pl.getAttribute('placement') === '0')) {
+    let order = pl.getAttribute('predefinedPositionOrder') || 'T';
+    const dd = [...settingsEl.querySelectorAll('dd_properties Option, data_defined_properties Option')].find(o => o.getAttribute('name') === 'PredefinedPositionOrder');
+    if (dd) {
+      const get = n => { const o = [...dd.children].find(c => c.getAttribute('name') === n); return o ? o.getAttribute('value') : null; };
+      if (get('active') === 'true' && get('type') === '3' && get('expression')) {
+        try { const v = qmlCompileExpr(get('expression'))({}); if (v) order = String(v); } catch (_) {}
+      }
+    }
+    const first = order.split(',')[0].trim().toUpperCase();
+    dir = first.startsWith('B') ? 'bottom' : first.startsWith('T') ? 'top' : 'center';
+  }
+  return {
+    text,
+    color: color ? color.css : '#333',
+    fontSize: parseFloat(ts.getAttribute('fontSize')) || 10,
+    fontFamily: ts.getAttribute('fontFamily') || 'sans-serif',
+    bold: ts.getAttribute('fontWeight') === '700' || ts.getAttribute('namedStyle') === 'Bold',
+    haloColor: halo ? halo.css : null,
+    dir
+  };
+}
+
+function parseQMLLabeling(qgisEl) {
+  if (qgisEl.getAttribute('labelsEnabled') !== '1') return null;
+  const labeling = qgisEl.querySelector(':scope > labeling');
+  if (!labeling) return null;
+  const type = labeling.getAttribute('type');
+  const rules = [], elseRules = [];
+  if (type === 'simple') {
+    const s = labeling.querySelector(':scope > settings');
+    const r = s && parseQMLTextSettings(s);
+    if (r) rules.push(Object.assign(r, { test: () => true }));
+  } else if (type === 'rule-based') {
+    const walk = (el, parentTest) => {
+      el.querySelectorAll(':scope > rule').forEach(ruleEl => {
+        if (ruleEl.getAttribute('active') === '0') return;
+        const flt = ruleEl.getAttribute('filter');
+        let test = parentTest, isElse = false;
+        if (flt && flt.trim().toUpperCase() === 'ELSE') isElse = true;
+        else if (flt) {
+          let f; try { f = qmlCompileExpr(flt); } catch (_) { return; }
+          test = p => parentTest(p) && f(p) === true;
+        }
+        const s = ruleEl.querySelector(':scope > settings');
+        const r = s && parseQMLTextSettings(s);
+        if (r) (isElse ? elseRules : rules).push(Object.assign(r, { test }));
+        walk(ruleEl, test);
+      });
+    };
+    walk(labeling.querySelector(':scope > rules') || labeling, () => true);
+  }
+  const all = rules.concat(elseRules);
+  return all.length ? { rules: all } : null;
+}
+
+function prepareQMLLabelRules(qmlInfo) {
+  if (!qmlInfo || !qmlInfo.labeling) return [];
+  const k = qmlInfo.ptScale || 1;
+  return qmlInfo.labeling.rules.map(r => Object.assign({}, r, { cls: injectQMLLabelStyle(Object.assign({}, r, { fontSize: Math.round(r.fontSize * k * 10) / 10 })) }));
+}
+
+// ── סמלי SVG בגודל אמיתי בשטח (MapUnit) עם גבולות מינ'/מקס' במ"מ כמו ב-QGIS ──
+let svgScaledMarkers = [];
+let qmlOffsetLabels = [];
+function nkMetersPerPixel() {
+  return 156543.03392 * Math.cos(map.getCenter().lat * Math.PI / 180) / Math.pow(2, map.getZoom());
+}
+function svgMarkerPx(st) {
+  if (st.sizePx) return st.sizePx;
+  return Math.min(st.maxPx, Math.max(st.minPx, st.sizeMeters / nkMetersPerPixel()));
+}
+function qmlSvgIcon(st, px) {
+  const s = Math.max(1, Math.round(px));
+  return L.icon({ iconUrl: st.svgUrl, iconSize: [s, s], iconAnchor: [s / 2, s / 2], tooltipAnchor: [0, 0], popupAnchor: [0, -s / 2], className: 'qml-svg-icon' });
+}
+function makeSvgMarker(latlng, st) {
+  const px = Math.round(map ? svgMarkerPx(st) : 16);
+  const m = L.marker(latlng, { icon: qmlSvgIcon(st, px), keyboard: false });
+  m._qmlSvg = st; m._qmlPx = px;
+  if (!st.sizePx) svgScaledMarkers.push(m);
+  return m;
+}
+// מיקום תווית מעל/מתחת לאייקון (כולל תיקון ה-RTL של Leaflet – ראו fixTooltipCentering)
+function fixQMLLabelOffset(lyr) {
+  const tt = lyr.getTooltip();
+  if (!tt) return;
+  if (!lyr._qmlLabelW) {
+    const w = tt._container && tt._container.offsetWidth;
+    if (!w) return;
+    lyr._qmlLabelW = w;
+  }
+  const half = lyr._qmlPx ? lyr._qmlPx / 2 : 0;
+  const dy = lyr._qmlLabelDir === 'bottom' ? half + 1 : lyr._qmlLabelDir === 'top' ? -(half + 1) : 0;
+  tt.options.offset = L.point(lyr._qmlLabelW, dy);
+  if (lyr.isTooltipOpen()) tt.update();
+}
+function updateSvgMarkers() {
+  if (!map) return;
+  const far = map.getZoom() < QML_LABEL_MIN_ZOOM;
+  map.getContainer().classList.toggle('nk-labels-far', far);
+  svgScaledMarkers.forEach(m => {
+    const px = Math.round(svgMarkerPx(m._qmlSvg));
+    if (px !== m._qmlPx) { m._qmlPx = px; m.setIcon(qmlSvgIcon(m._qmlSvg, px)); m._qmlNeedsOffset = true; }
+  });
+  if (!far) {
+    qmlOffsetLabels.forEach(l => {
+      if (!l._qmlLabelW || l._qmlNeedsOffset) { l._qmlNeedsOffset = false; fixQMLLabelOffset(l); }
+    });
+    declutterQMLLabels();
+  }
+}
+
+// מניעת חפיפה בין תוויות (כמו "Prevent overlap" ב-QGIS): תוויות בעדיפות גבוהה נשמרות,
+// ותווית שחופפת לתווית שכבר הוצבה מוסתרת. מחושב מחדש בכל שינוי זום.
+function declutterQMLLabels() {
+  const items = [];
+  qmlOffsetLabels.forEach(l => {
+    const tt = l._map && l.getTooltip && l.getTooltip();
+    const el = tt && tt._container;
+    if (el && l.isTooltipOpen()) { el.classList.remove('qml-clutter'); items.push({ l, el }); }
+  });
+  items.forEach(o => { o.r = o.el.getBoundingClientRect(); });
+  items.sort((a, b) => (a.l._qmlPri || 0) - (b.l._qmlPri || 0));
+  const kept = [];
+  for (const o of items) {
+    const r = o.r;
+    if (!r.width) continue;
+    if (kept.some(k => !(r.right < k.left || r.left > k.right || r.bottom < k.top || r.top > k.bottom))) o.el.classList.add('qml-clutter');
+    else kept.push(r);
+  }
+}
+
+// מצמיד תווית QML לישות (לפי החוק הראשון שמתאים)
+function bindQMLLabel(feature, lyr, rules, qmlInfo, labeledMarkers) {
+  if (!rules || !rules.length) return;
+  const props = qmlCleanProps(feature.properties || {});
+  const rule = rules.find(r => { try { return r.test(props); } catch (_) { return false; } });
+  if (!rule) return;
+  let val; try { val = rule.text(props); } catch (_) { val = null; }
+  if (val === undefined || val === null || String(val).trim() === '') return;
+  const st = qmlInfo.getStyle(feature.properties || {});
+  const isSvg  = !!(st && st.isSvg);
+  const isLine = /LineString/.test((feature.geometry && feature.geometry.type) || '');
+  const dir = isSvg ? rule.dir : 'center';
+  lyr.bindTooltip(String(val), {
+    permanent: true, direction: dir, interactive: false,
+    className: 'leaflet-tooltip-qml ' + rule.cls + ((isSvg || isLine) ? ' qml-far-hide' : '')
+  });
+  if (isSvg || isLine) {
+    // עדיפות: חוק ראשון (למשל תגית מוצגת) לפני השאר; תוויות קווי גובה אחרונות
+    lyr._qmlPri = rules.indexOf(rule) + (rules.length === 1 ? 0.5 : 0) + (isLine ? 10 : 0);
+    lyr._qmlLabelDir = dir; lyr._qmlNeedsOffset = true; qmlOffsetLabels.push(lyr);
+  }
+  else {
+    labeledMarkers.push(lyr);
+    if (st && st.useMeters) radiusScaledLabels.push({ lyr, radiusMeters: st.radiusMeters });
+  }
+}
+
+// חלונית ייעודית (למשל לקווי גובה – מתחת לשאר השכבות הווקטוריות)
+function ensureSHPPane(name) {
+  if (!map.getPane(name)) { map.createPane(name); map.getPane(name).style.zIndex = 390; }
+  return name;
+}
+
 // ממיר סמל QGIS יחיד (line/fill/marker) לאובייקט סטייל של Leaflet
 function parseQMLSymbol(symbolEl) {
   const layerEl = symbolEl.querySelector(':scope > layer');
@@ -2378,8 +2746,23 @@ function parseQMLSymbol(symbolEl) {
     } else {
       style.radius = Math.max(4, Math.round(parseFloat(opts.size || 2) * 3));
     }
+  } else if (cls === 'SvgMarker') {
+    // סמל SVG (מוטמע כ-base64 ב-QML) – גודל ביחידות מפה (מטרים) עם גבולות מ"מ, או קבוע במ"מ
+    const url = qmlSvgUrl(opts.name);
+    if (!url) return null;
+    style.isSvg = true; style.isMarker = true; style.svgUrl = url;
+    style.fillColor = style.color = '#777';
+    const size = parseFloat(opts.size || 4);
+    const sc = String(opts.size_map_unit_scale || '').replace(/^3x:/, '').split(',').map(Number);
+    if (opts.size_unit === 'MapUnit') {
+      style.sizeMeters = size;
+      style.minPx = sc[2] === 1 && sc[3] > 0 ? sc[3] * MM_PX : 1;
+      style.maxPx = sc[4] === 1 && sc[5] > 0 ? sc[5] * MM_PX : 512;
+    } else {
+      style.sizePx = opts.size_unit === 'Pixel' ? size : size * MM_PX;
+    }
   } else {
-    return null; // סוג סמל שאינו נתמך (SVG marker, gradient וכו') – ייפול לברירת מחדל
+    return null; // סוג סמל שאינו נתמך – ייפול לברירת מחדל
   }
   return style;
 }
@@ -2390,29 +2773,6 @@ function qmlPickCategory(props, attr, categories) {
   return categories.find(c => c.value === key) || categories.find(c => c.value === 'NULL');
 }
 
-function parseQMLLabeling(qgisEl) {
-  if (qgisEl.getAttribute('labelsEnabled') !== '1') return null;
-  const labeling = qgisEl.querySelector(':scope > labeling[type="simple"]');
-  if (!labeling) return null;
-  const ts = labeling.querySelector('text-style');
-  if (!ts) return null;
-  const fieldName = ts.getAttribute('fieldName');
-  if (!fieldName || ts.getAttribute('isExpression') === '1') return null;
-  const color    = qmlColor(ts.getAttribute('textColor'));
-  const buffer   = ts.querySelector('text-buffer');
-  const haloOn   = buffer && buffer.getAttribute('bufferDraw') === '1';
-  const halo     = haloOn ? qmlColor(buffer.getAttribute('bufferColor')) : null;
-  return {
-    // שם השדה ב-QML עלול לשאת את אותה שארית חתוכה (U+FFFD) שהשם עצמו ב-DBF סבל ממנה;
-    // מנקים אותה כאן כדי שהחיפוש בפועל בתוך feature.properties[fieldName] יצליח להתאים.
-    fieldName: cleanDBFFieldName(fieldName),
-    color: color ? color.css : '#333',
-    fontSize: parseFloat(ts.getAttribute('fontSize')) || 10,
-    fontFamily: ts.getAttribute('fontFamily') || 'sans-serif',
-    bold: ts.getAttribute('fontWeight') === '700' || ts.getAttribute('namedStyle') === 'Bold',
-    haloColor: halo ? halo.css : null
-  };
-}
 
 // מנתח מחרוזת XML של קובץ QML ומחזיר { getStyle(props), labeling, swatchColor }
 function parseQML(text) {
@@ -2452,7 +2812,9 @@ function parseQML(text) {
       return null; // graduated / rule-based – עדיין לא נתמך, ייפול לצבע ברירת מחדל
     }
 
-    return { getStyle, labeling: parseQMLLabeling(qgisEl), swatchColor };
+    // בשכבות עם אייקוני SVG / קווים – גודל גופן בנקודות (pt) כמו ב-QGIS; שכבות ותיקות נשארות כפי שהיו
+    const ptScale = /class="SvgMarker"|<symbol[^>]*type="line"/.test(text) ? 4 / 3 : 1;
+    return { getStyle, labeling: parseQMLLabeling(qgisEl), swatchColor, ptScale };
   } catch (_) { return null; }
 }
 
@@ -2469,8 +2831,8 @@ function injectQMLLabelStyle(labeling) {
 }
 
 // בונה שכבת Leaflet מ-GeoJSON, עם/בלי סטייל QML, ומוסיפה אותה למפה
-function buildSHPLayer(collections, baseName, qmlInfo) {
-  const labelClass = qmlInfo && qmlInfo.labeling ? injectQMLLabelStyle(qmlInfo.labeling) : null;
+function buildSHPLayer(collections, baseName, qmlInfo, opts = {}) {
+  const labelRules = prepareQMLLabelRules(qmlInfo);
   let total = 0;
   const ids = [];
   const labeledMarkers = [];
@@ -2478,28 +2840,23 @@ function buildSHPLayer(collections, baseName, qmlInfo) {
     const fallbackColor = LAYER_COLORS[layerColorIdx % LAYER_COLORS.length];
     const swatch = qmlInfo ? (qmlInfo.swatchColor || fallbackColor) : fallbackColor;
     const layer = L.geoJSON(fc, {
+      ...(opts.pane ? { pane: ensureSHPPane(opts.pane) } : {}),
+      ...(opts.attribution ? { attribution: opts.attribution } : {}),
       style: (feature) => qmlInfo
         ? qmlInfo.getStyle(feature.properties || {})
         : { color: fallbackColor, weight: 2, fillColor: fallbackColor, fillOpacity: 0.15 },
       onEachFeature: (feature, lyr) => {
         if (feature.properties) {
           const rows = Object.entries(feature.properties)
-            .filter(([, v]) => v !== null && v !== undefined)
+            .filter(([, v]) => v !== null && v !== undefined && !(typeof v === 'number' && isNaN(v)))
             .map(([k, v]) => `<b>${cleanDBFFieldName(k)}:</b> ${v}`).join('<br/>');
           if (rows) lyr.bindPopup(`<div dir="auto" style="max-width:280px;font-size:0.8rem">${rows}</div>`);
         }
-        if (labelClass && qmlInfo.labeling) {
-          const val = feature.properties ? feature.properties[qmlInfo.labeling.fieldName] : null;
-          if (val !== undefined && val !== null && String(val).trim() !== '') {
-            lyr.bindTooltip(String(val), { permanent: true, direction: 'center', className: 'leaflet-tooltip-qml ' + labelClass });
-            labeledMarkers.push(lyr);
-            const st = qmlInfo.getStyle(feature.properties || {});
-            if (st && st.useMeters) radiusScaledLabels.push({ lyr, radiusMeters: st.radiusMeters });
-          }
-        }
+        if (qmlInfo) bindQMLLabel(feature, lyr, labelRules, qmlInfo, labeledMarkers);
       },
       pointToLayer: (feature, latlng) => {
         const st = qmlInfo ? qmlInfo.getStyle(feature.properties || {}) : null;
+        if (st && st.isSvg) return makeSvgMarker(latlng, st);
         if (st && st.useMeters) {
           return L.circle(latlng, {
             radius: st.radiusMeters,
@@ -2522,6 +2879,7 @@ function buildSHPLayer(collections, baseName, qmlInfo) {
   });
   labeledMarkers.forEach(fixTooltipCentering);
   updateRadiusScaledLabels();
+  updateSvgMarkers();
   return { ids, total };
 }
 
@@ -2530,7 +2888,7 @@ function buildSHPLayer(collections, baseName, qmlInfo) {
 // "שוכח" את ההיסט הזה ומחזיר קואורדינטות שגויות בכ-100 מ'. לכן אנחנו קוראים את
 // הגיאומטריה הגולמית (ITM, לא-מפוריקטת) ישירות, ומריעים אותה בעצמנו עם ה-proj4
 // המכויל נכון של EPSG:2039 (ראו setupProj4/toITM).
-async function loadSHPFromBuffer(buffer, baseName) {
+async function loadSHPFromBuffer(buffer, baseName, opts = {}) {
   const files = fflate.unzipSync(new Uint8Array(buffer));
   const toAB = (u8) => u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
   const shpNames = Object.keys(files).filter(n => n.toLowerCase().endsWith('.shp'));
@@ -2545,7 +2903,7 @@ async function loadSHPFromBuffer(buffer, baseName) {
   });
   const qmlText = extractQMLFromZip(buffer);
   const qmlInfo = qmlText ? parseQML(qmlText) : null;
-  return buildSHPLayer(collections, baseName, qmlInfo);
+  return buildSHPLayer(collections, baseName, qmlInfo, opts);
 }
 
 async function importSHP(input) {
@@ -2567,13 +2925,15 @@ async function importSHP(input) {
 //  ספריית שכבות SHP קבועה (SHP Layers/) – משותפת לדסקטופ ולמובייל
 // ═══════════════════════════════════════════════════════
 const SHP_LIBRARY = [
+  { name: 'קווי גובה', file: 'SHP Layers/קווי גובה.zip', pane: 'nkContours',
+    attribution: 'קווי גובה: Copernicus DEM © DLR e.V., Airbus DS (EU/ESA)' },
   { name: 'בריכות', file: 'SHP Layers/בריכות.zip' },
   { name: 'גבול המיפוי', file: 'SHP Layers/גבול המיפוי.zip' },
   { name: 'דרכים מהמיפוי ב-2023', file: 'SHP Layers/דרכים מהמיפוי ב2023.zip' },
   { name: 'מבנים מהמיפוי ב-2023', file: 'SHP Layers/מבנים מהמיפוי ב2023.zip' },
-  { name: 'נקודות עניין מהמפה התיירותית (זמני)', file: 'SHP Layers/נקודות עניין מהמפה התיירותית_זמני.zip' },
+  { name: 'נקודות עניין מהמפה התיירותית', file: 'SHP Layers/נקודות עניין מהמפה התיירותית_תגיות.zip' },
   { name: 'תגיות לאיזורים חשובים', file: 'SHP Layers/תגיות לאיזורים חשובים.zip' },
-  { name: 'תחנות ניווט (זמני)', file: 'SHP Layers/תחנות ניווט_זמני.zip' }
+  { name: 'מספרי תחנות ניווט', file: 'SHP Layers/מספרי תחנות ניווט.zip' }
 ];
 const shpLibraryLoaded = {}; // file -> [layerIds]
 
@@ -2582,8 +2942,8 @@ const shpLibraryLoaded = {}; // file -> [layerIds]
 //  האינדקס נבנה מהשכבות בזמן הטעינה ונשמר גם אם השכבה מכובה.
 // ═══════════════════════════════════════════════════════
 const SEARCH_SOURCES = [
-  { file: 'SHP Layers/תחנות ניווט_זמני.zip',                    label: 'תחנות ניווט',         name: ['שם', 'name'],        num: ['מספר', 'num'] },
-  { file: 'SHP Layers/נקודות עניין מהמפה התיירותית_זמני.zip',   label: 'נקודות עניין',        name: ['name_he', 'name'],   num: ['poi_id'] },
+  { file: 'SHP Layers/מספרי תחנות ניווט.zip',                    label: 'תחנות ניווט',         name: ['שם', 'name'],        num: ['מספר', 'num'] },
+  { file: 'SHP Layers/נקודות עניין מהמפה התיירותית_תגיות.zip',  label: 'נקודות עניין',        name: ['name_he', 'name'],   num: ['Navi_num'] },
   { file: 'SHP Layers/תגיות לאיזורים חשובים.zip',               label: 'תגיות לאזורים חשובים', name: ['text', 'name'],      num: [] }
 ];
 const nkSearchIndex = {};   // file -> [{ name, num, norm, latlng, src }]
@@ -2596,7 +2956,7 @@ function nkNorm(s) {
     .replace(/\s+/g, ' ').trim();
 }
 function nkPick(props, keys) {
-  for (const k of keys) if (props[k] !== undefined && props[k] !== null && String(props[k]).trim() !== '') return String(props[k]).trim();
+  for (const k of keys) if (props[k] !== undefined && props[k] !== null && !(typeof props[k] === 'number' && isNaN(props[k])) && String(props[k]).trim() !== '') return String(props[k]).trim();
   return '';
 }
 function nkLayerRegistry() {
@@ -2771,7 +3131,7 @@ async function toggleSHPLibraryLayer(i, checked) {
     const buffer = await res.arrayBuffer();
     let ids;
     _suppressFitCount++;
-    try { ({ ids } = await loadSHPFromBuffer(buffer, item.name)); } finally { _suppressFitCount--; }
+    try { ({ ids } = await loadSHPFromBuffer(buffer, item.name, item)); } finally { _suppressFitCount--; }
     shpLibraryLoaded[item.file] = ids;
     nkSearchIndexFile(item.file, ids);
     if (!_shpLibAutoLoad) toast(item.name + ' נטען');
